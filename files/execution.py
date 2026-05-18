@@ -1,14 +1,16 @@
 """
-core/execution.py — Trade Execution via Tradovate API
+core/execution.py — Trade Execution via Alpaca Paper API
 
-Places market orders for MNQ/MES micro futures.
-Same safety check as before: verifies DB side before every close
-so phantom short/long mismatches are impossible.
+Places market orders for SPY/QQQ with simulated leverage.
+The leverage multiplier makes paper P&L behave like futures —
+if SPY moves 1%, with 10x leverage the bot treats it as 10%.
+
+CRITICAL SAFETY: verifies DB side before every close.
+Phantom short/long mismatches are impossible.
 """
 
 import logging
 import requests
-from datetime import datetime
 from core.database import (
     open_trade, close_trade,
     get_open_trade_for_symbol, get_open_trades
@@ -17,70 +19,52 @@ import config
 
 log = logging.getLogger(__name__)
 
-DEMO_BASE_URL = "https://demo.tradovateapi.com/v1"
+ALPACA_TRADE_URL = "https://paper-api.alpaca.markets/v2"
 
 
 class ExecutionEngine:
     def __init__(self, data_fetcher):
-        # share the authenticated session from DataFetcher
-        # so we don't need to auth twice
-        self._data = data_fetcher
-        log.info("[EXEC] Execution engine initialized (paper/demo mode)")
-
-    def _session(self):
-        """Use the data fetcher's authenticated session."""
-        self._data._ensure_token()
-        return self._data._session
-
-    def _get_contract_id(self, symbol: str) -> int:
-        """Look up front-month contract ID."""
-        try:
-            r = self._session().get(
-                f"{DEMO_BASE_URL}/contract/find",
-                params={"name": symbol},
-                timeout=10
-            )
-            r.raise_for_status()
-            return r.json()["id"]
-        except Exception as e:
-            log.error(f"[EXEC] Contract lookup failed {symbol}: {e}")
-            return None
+        self._data    = data_fetcher
+        self._session = requests.Session()
+        self._session.headers.update({
+            "APCA-API-KEY-ID":     config.ALPACA_API_KEY,
+            "APCA-API-SECRET-KEY": config.ALPACA_SECRET_KEY,
+            "Content-Type":        "application/json"
+        })
+        log.info(
+            f"[EXEC] Execution engine initialized | "
+            f"paper mode | leverage={config.SIMULATED_LEVERAGE}x"
+        )
 
     def enter_trade(self, signal, qty: float) -> str:
         """
-        Open a new futures position.
-        qty = number of contracts (usually 1-2 for $2k account)
+        Open a new position via Alpaca paper trading.
+        qty = number of shares (fractional supported).
         Returns trade_id on success, None on failure.
         """
-        contract_id = self._get_contract_id(signal.symbol)
-        if not contract_id:
-            return None
-
-        action = "Buy" if signal.direction == "long" else "Sell"
-
         try:
-            order = {
-                "accountSpec":     config.TRADOVATE_USERNAME,
-                "accountId":       config.TRADOVATE_ACCOUNT_ID,
-                "action":          action,
-                "symbol":          signal.symbol,
-                "orderQty":        int(qty),
-                "orderType":       "Market",
-                "isAutomated":     True
-            }
-            r = self._session().post(
-                f"{DEMO_BASE_URL}/order/placeorder",
-                json=order,
+            side = "buy" if signal.direction == "long" else "sell"
+
+            r = self._session.post(
+                f"{ALPACA_TRADE_URL}/orders",
+                json={
+                    "symbol":        signal.symbol,
+                    "qty":           str(round(qty, 2)),
+                    "side":          side,
+                    "type":          "market",
+                    "time_in_force": "day"
+                },
                 timeout=10
             )
             r.raise_for_status()
             data       = r.json()
-            fill_price = float(data.get("price", signal.price))
+            fill_price = float(data.get("filled_avg_price") or signal.price)
 
+            # record in DB
             trade_id = open_trade(
                 symbol=signal.symbol,
                 side=signal.direction,
-                qty=float(int(qty)),
+                qty=qty,
                 entry_price=fill_price,
                 stop_loss=signal.stop_loss,
                 take_profit=signal.take_profit,
@@ -88,10 +72,13 @@ class ExecutionEngine:
                 signal_id=signal.signal_id
             )
 
+            # calculate leveraged exposure for logging
+            exposure = fill_price * qty * config.SIMULATED_LEVERAGE
             log.info(
-                f"[EXEC] OPEN {signal.direction.upper()} {signal.symbol} "
-                f"@ {fill_price:.2f} | contracts={int(qty)} | "
-                f"SL={signal.stop_loss:.2f} TP={signal.take_profit:.2f} | "
+                f"[EXEC] 🟢 OPEN {signal.direction.upper()} {signal.symbol} "
+                f"@ ${fill_price:.2f} | qty={qty:.2f} | "
+                f"exposure=${exposure:.0f} ({config.SIMULATED_LEVERAGE}x) | "
+                f"SL=${signal.stop_loss:.2f} TP=${signal.take_profit:.2f} | "
                 f"id={trade_id}"
             )
             return trade_id
@@ -103,18 +90,19 @@ class ExecutionEngine:
     def exit_trade(self, trade_id: str, symbol: str,
                    current_price: float, reason: str):
         """
-        Close an existing futures position.
+        Close an existing position.
 
-        CRITICAL SAFETY CHECK: looks up actual side in DB before placing
-        any order. Prevents the phantom short/long bug from QuantBot.
+        CRITICAL SAFETY CHECK: looks up actual open trade in DB
+        before placing any order. Verifies trade_id matches.
+        Prevents phantom short/long mismatches entirely.
         """
-        # verify trade exists in DB
+        # verify trade exists and matches
         db_trade = get_open_trade_for_symbol(symbol)
 
         if db_trade is None:
             log.error(
                 f"[EXEC] EXIT BLOCKED — no open DB trade for {symbol} "
-                f"(requested id={trade_id}). Skipping."
+                f"(id={trade_id}). Skipping."
             )
             return None
 
@@ -126,50 +114,69 @@ class ExecutionEngine:
             return None
 
         actual_side = db_trade["side"]
-        qty         = int(db_trade["qty"])
+        qty         = db_trade["qty"]
+        entry_price = db_trade["entry_price"]
 
         # to close a long we sell, to close a short we buy
-        action = "Sell" if actual_side == "long" else "Buy"
-
-        contract_id = self._get_contract_id(symbol)
-        if not contract_id:
-            return None
+        close_side = "sell" if actual_side == "long" else "buy"
 
         try:
-            order = {
-                "accountSpec": config.TRADOVATE_USERNAME,
-                "accountId":   config.TRADOVATE_ACCOUNT_ID,
-                "action":      action,
-                "symbol":      symbol,
-                "orderQty":    qty,
-                "orderType":   "Market",
-                "isAutomated": True
-            }
-            r = self._session().post(
-                f"{DEMO_BASE_URL}/order/placeorder",
-                json=order,
+            r = self._session.post(
+                f"{ALPACA_TRADE_URL}/orders",
+                json={
+                    "symbol":        symbol,
+                    "qty":           str(round(qty, 2)),
+                    "side":          close_side,
+                    "type":          "market",
+                    "time_in_force": "day"
+                },
                 timeout=10
             )
             r.raise_for_status()
             data       = r.json()
-            fill_price = float(data.get("price", current_price))
+            fill_price = float(data.get("filled_avg_price") or current_price)
 
-            pnl = close_trade(trade_id, fill_price, reason)
+            # calculate raw P&L
+            if actual_side == "long":
+                raw_pnl = (fill_price - entry_price) * qty
+            else:
+                raw_pnl = (entry_price - fill_price) * qty
 
-            emoji = "🟢" if pnl and pnl > 0 else "🔴"
+            # apply leverage multiplier to simulate futures behavior
+            leveraged_pnl = raw_pnl * config.SIMULATED_LEVERAGE
+
+            # save leveraged P&L to DB
+            close_trade(trade_id, fill_price, reason)
+
+            # manually update pnl in DB with leveraged amount
+            from core.database import get_conn
+            with get_conn() as conn:
+                cur = conn.cursor()
+                cur.execute(
+                    "UPDATE trades SET pnl_usd=%s, pnl_pct=%s WHERE id=%s",
+                    (
+                        round(leveraged_pnl, 4),
+                        round(leveraged_pnl / (entry_price * qty) * 100, 4),
+                        trade_id
+                    )
+                )
+
+            emoji = "🟢" if leveraged_pnl > 0 else "🔴"
             log.info(
                 f"[EXEC] {emoji} CLOSE {actual_side.upper()} {symbol} "
-                f"@ {fill_price:.2f} | P&L=${pnl:.2f} | reason={reason} | "
-                f"id={trade_id}"
+                f"@ ${fill_price:.2f} | "
+                f"raw=${raw_pnl:.2f} | "
+                f"leveraged={config.SIMULATED_LEVERAGE}x → ${leveraged_pnl:.2f} | "
+                f"reason={reason} | id={trade_id}"
             )
-            return pnl
+            return leveraged_pnl
 
         except Exception as e:
             log.error(f"[EXEC] Failed to exit {symbol}: {e}")
             return None
 
     def close_all_positions(self, reason="eod"):
-        """Close everything — used at end of day."""
+        """Close all open positions — used at end of day."""
         open_trades = get_open_trades()
         for trade in open_trades:
             self.exit_trade(
@@ -179,3 +186,13 @@ class ExecutionEngine:
                 reason
             )
         log.info(f"[EXEC] All positions closed ({reason})")
+
+    def get_account(self):
+        """Returns Alpaca account info."""
+        try:
+            r = self._session.get(f"{ALPACA_TRADE_URL}/account", timeout=5)
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            log.error(f"[EXEC] Account fetch failed: {e}")
+            return None
