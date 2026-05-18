@@ -48,7 +48,7 @@ class AlphaBot:
         init_db()
 
         self.data      = DataFetcher()
-        self.execution = ExecutionEngine()
+        self.execution = ExecutionEngine(self.data)
         self.risk      = RiskManager(STARTING_CAPITAL)
         self.strategy  = EMAVWAPStrategy()
         self.meta      = MetaBrain()
