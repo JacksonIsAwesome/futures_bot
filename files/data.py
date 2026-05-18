@@ -1,103 +1,73 @@
 """
-core/data.py — Market Data via Tradovate API
+core/data.py — Market Data via Alpaca API
 
-Fetches OHLCV bars for MNQ and MES micro futures.
-Handles session token auth automatically — tokens expire every 60-80 min
-so we refresh proactively every 45 minutes.
+Fetches OHLCV bars for SPY and QQQ (simulating futures behavior
+with leverage multiplier applied at the strategy/risk layer).
 
-Calculates all indicators in one place:
+Calculates all indicators:
   EMA fast/slow, VWAP (resets daily), RSI, ATR, Volume spike
 """
 
-import time
 import logging
-import requests
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
+import requests
 import config
 
 log = logging.getLogger(__name__)
 
-# Tradovate endpoints
-DEMO_AUTH_URL = "https://demo.tradovateapi.com/v1/auth/accesstokenrequest"
-DEMO_BASE_URL = "https://demo.tradovateapi.com/v1"
-MD_BASE_URL   = "https://md.tradovateapi.com/v1"
+ALPACA_DATA_URL = "https://data.alpaca.markets/v2"
 
 
 class DataFetcher:
     def __init__(self):
-        self._token        = None
-        self._token_expiry = 0
-        self._price_cache  = {}
-        self._session      = requests.Session()
-        self._authenticate()
-        log.info("[DATA] Tradovate data fetcher initialized")
-
-    # Auth
-    def _authenticate(self):
-        payload = {
-            "name":        config.TRADOVATE_USERNAME,
-            "password":    config.TRADOVATE_PASSWORD,
-            "appId":       config.TRADOVATE_APP_ID,
-            "appVersion":  "1.0",
-            "cid":         config.TRADOVATE_CID,
-            "sec":         config.TRADOVATE_SECRET,
-            "deviceId":    "alphabot-001"
-        }
-        r = self._session.post(DEMO_AUTH_URL, json=payload, timeout=10)
-        r.raise_for_status()
-        data = r.json()
-        if "accessToken" not in data:
-            raise ValueError(f"No token in response: {data}")
-        self._token        = data["accessToken"]
-        self._token_expiry = time.time() + (45 * 60)
+        self._price_cache = {}
+        self._session = requests.Session()
         self._session.headers.update({
-            "Authorization": f"Bearer {self._token}",
-            "Content-Type":  "application/json"
+            "APCA-API-KEY-ID":     config.ALPACA_API_KEY,
+            "APCA-API-SECRET-KEY": config.ALPACA_SECRET_KEY,
+            "Content-Type":        "application/json"
         })
-        log.info("[DATA] Tradovate authenticated")
-
-    def _ensure_token(self):
-        if time.time() >= self._token_expiry:
-            log.info("[DATA] Token expiring, refreshing...")
-            self._authenticate()
+        log.info("[DATA] Alpaca data fetcher initialized ✓")
 
     def get_bars(self, symbol: str, limit=200):
-        self._ensure_token()
+        """
+        Fetch 1-minute OHLCV bars from Alpaca.
+        Returns DataFrame with columns: open, high, low, close, volume
+        """
         try:
-            r = self._session.post(
-                f"{MD_BASE_URL}/chart/subscribe",
-                json={
-                    "symbol": symbol,
-                    "chartDescription": {
-                        "underlyingType": "MinuteBar",
-                        "elementSize": 1,
-                        "elementSizeUnit": "UnderlyingUnits",
-                        "withHistogram": False
-                    },
-                    "timeRange": {
-                        "asMuchAsElements": limit
-                    }
+            end   = datetime.utcnow()
+            start = end - timedelta(hours=8)
+
+            r = self._session.get(
+                f"{ALPACA_DATA_URL}/stocks/{symbol}/bars",
+                params={
+                    "timeframe": "1Min",
+                    "start":     start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "end":       end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "limit":     limit,
+                    "feed":      "iex"
                 },
-                timeout=15
+                timeout=10
             )
             r.raise_for_status()
-            data = r.json()
-            bars = data.get("bars", [])
+            bars = r.json().get("bars", [])
+
             if not bars:
                 log.warning(f"[DATA] No bars for {symbol}")
                 return None
 
             df = pd.DataFrame(bars)
-            df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
+            df["timestamp"] = pd.to_datetime(df["t"], utc=True)
             df = df.set_index("timestamp").sort_index()
-
-            # combine up/down volume
-            up   = df.get("upVolume",   pd.Series(0, index=df.index))
-            down = df.get("downVolume", pd.Series(0, index=df.index))
-            df["volume"] = up.fillna(0) + down.fillna(0)
-
+            df = df.rename(columns={
+                "o": "open",
+                "h": "high",
+                "l": "low",
+                "c": "close",
+                "v": "volume"
+            })
             return df[["open", "high", "low", "close", "volume"]].astype(float)
 
         except Exception as e:
@@ -105,16 +75,15 @@ class DataFetcher:
             return None
 
     def get_latest_price(self, symbol: str):
-        self._ensure_token()
+        """Get the latest trade price for a symbol."""
         try:
             r = self._session.get(
-                f"{MD_BASE_URL}/quote/find",
-                params={"name": symbol},
+                f"{ALPACA_DATA_URL}/stocks/{symbol}/trades/latest",
+                params={"feed": "iex"},
                 timeout=5
             )
             r.raise_for_status()
-            data  = r.json()
-            price = float(data.get("last", data.get("bid", 0)))
+            price = float(r.json()["trade"]["p"])
             if price > 0:
                 self._price_cache[symbol] = price
             return price
@@ -123,6 +92,10 @@ class DataFetcher:
             return self._price_cache.get(symbol)
 
     def calculate_indicators(self, df):
+        """
+        Adds all indicators to the dataframe.
+        Single source of truth for all signal calculations.
+        """
         if df is None or len(df) < 50:
             return None
 
@@ -137,10 +110,10 @@ class DataFetcher:
         ema_above       = (df["ema_fast"] > df["ema_slow"]).astype(int)
         df["ema_cross"] = ema_above.diff()
 
-        # VWAP - resets daily
-        tp             = (high + low + close) / 3
-        df["tp_vol"]   = tp * volume
-        df["date"]     = df.index.date
+        # VWAP — resets daily
+        tp               = (high + low + close) / 3
+        df["tp_vol"]     = tp * volume
+        df["date"]       = df.index.date
         df["cum_tp_vol"] = df.groupby("date")["tp_vol"].cumsum()
         df["cum_vol"]    = df.groupby("date")["volume"].cumsum()
         df["vwap"]       = df["cum_tp_vol"] / df["cum_vol"].replace(0, np.nan)
@@ -175,6 +148,7 @@ class DataFetcher:
         return df
 
     def get_full_snapshot(self, symbol: str):
+        """Fetch bars + calculate all indicators."""
         df = self.get_bars(symbol)
         if df is None:
             return None
