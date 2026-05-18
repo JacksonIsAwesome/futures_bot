@@ -37,8 +37,8 @@ class DataFetcher:
         Returns DataFrame with columns: open, high, low, close, volume
         """
         try:
-            end   = datetime.utcnow()
-            start = end - timedelta(hours=8)
+            end   = datetime.utcnow() - timedelta(minutes=1)
+            start = end - timedelta(hours=6)
 
             r = self._session.get(
                 f"{ALPACA_DATA_URL}/stocks/{symbol}/bars",
@@ -47,7 +47,7 @@ class DataFetcher:
                     "start":     start.strftime("%Y-%m-%dT%H:%M:%SZ"),
                     "end":       end.strftime("%Y-%m-%dT%H:%M:%SZ"),
                     "limit":     limit,
-                    "feed":      "iex"
+                    "feed":      "sip"
                 },
                 timeout=10
             )
@@ -79,7 +79,7 @@ class DataFetcher:
         try:
             r = self._session.get(
                 f"{ALPACA_DATA_URL}/stocks/{symbol}/trades/latest",
-                params={"feed": "iex"},
+                params={"feed": "sip"},
                 timeout=5
             )
             r.raise_for_status()
