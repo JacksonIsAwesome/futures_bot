@@ -5,9 +5,6 @@ Deploy as a separate Railway service.
 """
 
 import os
-import sys
-sys.path.insert(0, '/app')
-
 import json
 from flask import Flask, jsonify, request, send_from_directory
 import psycopg2
@@ -110,22 +107,21 @@ def get_config():
             cur.execute("SELECT key, value FROM config_overrides")
             overrides = {r['key']: r['value'] for r in cur.fetchall()}
 
-        import config as cfg
         defaults = {
-            'MIN_SIGNAL_SCORE':   cfg.MIN_SIGNAL_SCORE,
-            'SIMULATED_LEVERAGE': cfg.SIMULATED_LEVERAGE,
-            'MAX_DAILY_LOSS_PCT': cfg.MAX_DAILY_LOSS_PCT,
-            'MAX_OPEN_TRADES':    cfg.MAX_OPEN_TRADES,
-            'MAX_POSITION_PCT':   cfg.MAX_POSITION_PCT,
-            'EMA_FAST':           cfg.EMA_FAST,
-            'EMA_SLOW':           cfg.EMA_SLOW,
-            'VOLUME_SPIKE_MULT':  cfg.VOLUME_SPIKE_MULT,
-            'RSI_OVERBOUGHT':     cfg.RSI_OVERBOUGHT,
-            'RSI_OVERSOLD':       cfg.RSI_OVERSOLD,
-            'ATR_STOP_MULT':      cfg.ATR_STOP_MULT,
-            'ATR_TP_MULT':        cfg.ATR_TP_MULT,
-            'BREAKEVEN_TRIGGER':  cfg.BREAKEVEN_TRIGGER,
-            'STARTING_CAPITAL':   cfg.STARTING_CAPITAL,
+            'MIN_SIGNAL_SCORE':   3,
+            'SIMULATED_LEVERAGE': 10,
+            'MAX_DAILY_LOSS_PCT': 0.30,
+            'MAX_OPEN_TRADES':    7,
+            'MAX_POSITION_PCT':   0.20,
+            'EMA_FAST':           9,
+            'EMA_SLOW':           21,
+            'VOLUME_SPIKE_MULT':  1.5,
+            'RSI_OVERBOUGHT':     70,
+            'RSI_OVERSOLD':       30,
+            'ATR_STOP_MULT':      1.5,
+            'ATR_TP_MULT':        3.0,
+            'BREAKEVEN_TRIGGER':  10,
+            'STARTING_CAPITAL':   2000.0,
         }
         for k, v in overrides.items():
             if k in defaults:
