@@ -47,7 +47,7 @@ class DataFetcher:
                     "start":     start.strftime("%Y-%m-%dT%H:%M:%SZ"),
                     "end":       end.strftime("%Y-%m-%dT%H:%M:%SZ"),
                     "limit":     limit,
-                    "feed":      "sip"
+                    "feed":      "iex"
                 },
                 timeout=10
             )
@@ -79,7 +79,7 @@ class DataFetcher:
         try:
             r = self._session.get(
                 f"{ALPACA_DATA_URL}/stocks/{symbol}/trades/latest",
-                params={"feed": "sip"},
+                params={"feed": "iex"},
                 timeout=5
             )
             r.raise_for_status()
