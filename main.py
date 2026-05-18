@@ -113,6 +113,28 @@ class AlphaBot:
         if signal.direction is None:
             return
 
+        # ── Override price with live quote ────────────────────
+        # Indicators (EMA, VWAP, RSI) are fine on delayed bars —
+        # they're used for direction only. But the actual entry
+        # price, stop, and TP must use the live price so we
+        # don't enter a trade based on a 15-minute-old price.
+        live_price = self.data.get_latest_price(symbol)
+        if live_price and live_price > 0:
+            old_price = signal.price
+            # recalculate stop and TP from live price using same ATR
+            if signal.direction == "long":
+                signal.stop_loss   = round(live_price - signal.atr * 2.0, 4)
+                signal.take_profit = round(live_price + signal.atr * 4.0, 4)
+            else:
+                signal.stop_loss   = round(live_price + signal.atr * 2.0, 4)
+                signal.take_profit = round(live_price - signal.atr * 4.0, 4)
+            signal.price = live_price
+            if abs(live_price - old_price) > 0.01:
+                log.info(
+                    f"[MAIN] {symbol} live price override: "
+                    f"{old_price:.2f} → {live_price:.2f}"
+                )
+
         # check 30-minute cooldown per symbol
         last_exit = self._last_exit.get(symbol, 0)
         if time.time() - last_exit < self.COOLDOWN_SEC:
