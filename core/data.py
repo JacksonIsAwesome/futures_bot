@@ -1,8 +1,15 @@
 """
 core/data.py — Market Data via Alpaca API
 
-Fetches OHLCV bars for SPY and QQQ (simulating futures behavior
+Fetches OHLCV bars for QQQ (simulating MNQ micro futures behavior
 with leverage multiplier applied at the strategy/risk layer).
+
+Key feature: STALENESS CHECK
+IEX feed has a 15-minute delay and can serve the same stale bar
+repeatedly during low-volume periods. Before returning data we check
+the timestamp of the most recent bar. If it is older than
+MAX_BAR_AGE_MINUTES we return None so the bot skips that cycle
+rather than trading on frozen data.
 
 Calculates all indicators:
   EMA fast/slow, VWAP (resets daily), RSI, ATR, Volume spike
@@ -11,7 +18,7 @@ Calculates all indicators:
 import logging
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import requests
 import config
 
@@ -22,7 +29,8 @@ ALPACA_DATA_URL = "https://data.alpaca.markets/v2"
 
 class DataFetcher:
     def __init__(self):
-        self._price_cache = {}
+        self._price_cache  = {}
+        self._stale_warned = {}   # symbol -> last time we logged a stale warning
         self._session = requests.Session()
         self._session.headers.update({
             "APCA-API-KEY-ID":     config.ALPACA_API_KEY,
@@ -33,8 +41,11 @@ class DataFetcher:
 
     def get_bars(self, symbol: str, limit=200):
         """
-        Fetch 1-minute OHLCV bars from Alpaca.
-        Returns DataFrame with columns: open, high, low, close, volume
+        Fetch 1-minute OHLCV bars from Alpaca IEX feed.
+
+        Returns DataFrame or None.
+        Returns None (skips) if the most recent bar is older than
+        MAX_BAR_AGE_MINUTES — protects against trading on stale data.
         """
         try:
             end   = datetime.utcnow() - timedelta(minutes=1)
@@ -55,7 +66,7 @@ class DataFetcher:
             bars = r.json().get("bars", [])
 
             if not bars:
-                log.warning(f"[DATA] No bars for {symbol}")
+                log.warning(f"[DATA] No bars returned for {symbol}")
                 return None
 
             df = pd.DataFrame(bars)
@@ -68,14 +79,41 @@ class DataFetcher:
                 "c": "close",
                 "v": "volume"
             })
-            return df[["open", "high", "low", "close", "volume"]].astype(float)
+            df = df[["open", "high", "low", "close", "volume"]].astype(float)
+
+            # ── Staleness check ───────────────────────────────────
+            # IEX can freeze and return the same bar repeatedly.
+            # Check how old the most recent bar is.
+            last_bar_time = df.index[-1]   # timezone-aware UTC timestamp
+            now_utc       = datetime.now(timezone.utc)
+            age_minutes   = (now_utc - last_bar_time).total_seconds() / 60
+
+            max_age = getattr(config, "MAX_BAR_AGE_MINUTES", 20)
+
+            if age_minutes > max_age:
+                # only log once per 5 minutes to avoid spam
+                last_warn = self._stale_warned.get(symbol, 0)
+                import time
+                if time.time() - last_warn > 300:
+                    log.warning(
+                        f"[DATA] {symbol} data is stale — "
+                        f"last bar was {age_minutes:.1f} min ago "
+                        f"(max allowed: {max_age} min). Skipping."
+                    )
+                    self._stale_warned[symbol] = time.time()
+                return None
+
+            return df
 
         except Exception as e:
             log.error(f"[DATA] Bar fetch failed {symbol}: {e}")
             return None
 
     def get_latest_price(self, symbol: str):
-        """Get the latest trade price for a symbol."""
+        """
+        Get the latest trade price for a symbol.
+        Falls back to cached price if the request fails.
+        """
         try:
             r = self._session.get(
                 f"{ALPACA_DATA_URL}/stocks/{symbol}/trades/latest",
@@ -148,7 +186,7 @@ class DataFetcher:
         return df
 
     def get_full_snapshot(self, symbol: str):
-        """Fetch bars + calculate all indicators."""
+        """Fetch bars + calculate all indicators. Returns None if stale."""
         df = self.get_bars(symbol)
         if df is None:
             return None
