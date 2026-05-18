@@ -17,8 +17,8 @@ ALPACA_SECRET_KEY = os.environ.get("ALPACA_SECRET_KEY", "")
 # SPY  = S&P 500 ETF  → simulates MES (Micro E-mini S&P)
 # QQQ  = Nasdaq ETF   → simulates MNQ (Micro E-mini Nasdaq)
 # NVDA, AAPL          → high volume momentum plays
-SYMBOLS = ["SPY", "QQQ", "NVDA", "AAPL"]
-PRIMARY  = "QQQ"   # most volatile of the four
+SYMBOLS = ["SPY", "QQQ"]
+PRIMARY  = "QQQ"  # most volatile of the two   # most volatile of the four
 
 # ── Simulated futures leverage ────────────────────────────────
 # Multiplies paper P&L to simulate futures leverage behavior.
