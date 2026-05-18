@@ -56,7 +56,9 @@ class AlphaBot:
         # cache for full indicator dataframes (updated every 60s)
         self._df_cache    = {}
         self._last_slow   = {}   # symbol -> last slow-loop time
+        self._last_exit   = {}   # symbol -> timestamp of last exit (cooldown)
         self._scan_count  = 0
+        self.COOLDOWN_SEC = 30 * 60   # 30 min cooldown per symbol after exit
         self._last_date   = date.today()
 
         log.info("[BOOT] All modules initialized ✓")
@@ -76,7 +78,7 @@ class AlphaBot:
     def _is_end_of_day(self) -> bool:
         now = datetime.now(ET)
         close_h, close_m = map(int, MARKET_CLOSE.split(":"))
-        eod = now.replace(hour=close_h - 1, minute=55, second=0)
+        eod = now.replace(hour=close_h, minute=close_m - 5, second=0)
         return now >= eod
 
     # ── Daily reset ───────────────────────────────────────────
@@ -109,6 +111,13 @@ class AlphaBot:
 
         # only attempt entry if signal has a direction
         if signal.direction is None:
+            return
+
+        # check 30-minute cooldown per symbol
+        last_exit = self._last_exit.get(symbol, 0)
+        if time.time() - last_exit < self.COOLDOWN_SEC:
+            mins_left = int((self.COOLDOWN_SEC - (time.time() - last_exit)) / 60)
+            log.debug(f"[MAIN] {symbol} in cooldown — {mins_left}m remaining")
             return
 
         # check risk rules
@@ -160,6 +169,8 @@ class AlphaBot:
                     self.execution.exit_trade(
                         trade_id, trade["symbol"], price, reason
                     )
+                    # start cooldown for this symbol
+                    self._last_exit[trade["symbol"]] = time.time()
 
     # ── Main scan cycle ───────────────────────────────────────
 
