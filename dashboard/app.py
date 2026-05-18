@@ -1,0 +1,215 @@
+"""
+dashboard/app.py — Flask API + Dashboard Server for AlphaBot
+Serves the HTML dashboard and REST API endpoints.
+Deploy as a separate Railway service.
+"""
+
+import os
+import sys
+sys.path.insert(0, '/app')
+
+import json
+from flask import Flask, jsonify, request, send_from_directory
+import psycopg2
+import psycopg2.extras
+
+app = Flask(__name__, static_folder='static')
+DATABASE_URL = os.environ.get('DATABASE_URL', '')
+
+
+def get_conn():
+    return psycopg2.connect(DATABASE_URL)
+
+
+@app.route('/')
+def index():
+    return send_from_directory('static', 'index.html')
+
+
+@app.route('/api/overview')
+def overview():
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+            cur.execute("SELECT * FROM trades WHERE status='open' ORDER BY entered_at")
+            open_trades = [dict(r) for r in cur.fetchall()]
+            for t in open_trades:
+                t['entered_at'] = t['entered_at'].isoformat() if t['entered_at'] else None
+
+            cur.execute("""
+                SELECT
+                    COUNT(*) FILTER (WHERE status != 'open') as closed,
+                    COUNT(*) FILTER (WHERE pnl_usd > 0) as wins,
+                    COALESCE(SUM(pnl_usd) FILTER (WHERE status != 'open'), 0) as pnl,
+                    COUNT(*) FILTER (WHERE status = 'open') as open_count
+                FROM trades WHERE DATE(entered_at) = CURRENT_DATE
+            """)
+            today = dict(cur.fetchone())
+
+            cur.execute("""
+                SELECT
+                    COUNT(*) FILTER (WHERE status != 'open') as total,
+                    COUNT(*) FILTER (WHERE pnl_usd > 0) as wins,
+                    COALESCE(SUM(pnl_usd) FILTER (WHERE status != 'open'), 0) as total_pnl
+                FROM trades WHERE entered_at >= NOW() - INTERVAL '7 days'
+            """)
+            week = dict(cur.fetchone())
+
+            cur.execute("""
+                SELECT * FROM trades WHERE status != 'open'
+                ORDER BY exited_at DESC LIMIT 20
+            """)
+            recent = [dict(r) for r in cur.fetchall()]
+            for t in recent:
+                t['entered_at'] = t['entered_at'].isoformat() if t['entered_at'] else None
+                t['exited_at']  = t['exited_at'].isoformat()  if t['exited_at']  else None
+
+            win_rate  = round(today['wins'] / today['closed'] * 100, 1) if today['closed'] else 0
+            week_wr   = round(week['wins']  / week['total']   * 100, 1) if week['total']   else 0
+
+            return jsonify({
+                'open_trades':   open_trades,
+                'today': {
+                    'pnl':        round(float(today['pnl'] or 0), 2),
+                    'trades':     int(today['closed'] or 0),
+                    'wins':       int(today['wins'] or 0),
+                    'win_rate':   win_rate,
+                    'open_count': int(today['open_count'] or 0)
+                },
+                'week': {
+                    'pnl':      round(float(week['total_pnl'] or 0), 2),
+                    'trades':   int(week['total'] or 0),
+                    'win_rate': week_wr
+                },
+                'recent_trades': recent
+            })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/signals')
+def signals():
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+            cur.execute("SELECT * FROM signals ORDER BY timestamp DESC LIMIT 100")
+            rows = [dict(r) for r in cur.fetchall()]
+            for r in rows:
+                r['timestamp'] = r['timestamp'].isoformat() if r['timestamp'] else None
+            return jsonify(rows)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/config', methods=['GET'])
+def get_config():
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+            cur.execute("SELECT key, value FROM config_overrides")
+            overrides = {r['key']: r['value'] for r in cur.fetchall()}
+
+        import config as cfg
+        defaults = {
+            'MIN_SIGNAL_SCORE':   cfg.MIN_SIGNAL_SCORE,
+            'SIMULATED_LEVERAGE': cfg.SIMULATED_LEVERAGE,
+            'MAX_DAILY_LOSS_PCT': cfg.MAX_DAILY_LOSS_PCT,
+            'MAX_OPEN_TRADES':    cfg.MAX_OPEN_TRADES,
+            'MAX_POSITION_PCT':   cfg.MAX_POSITION_PCT,
+            'EMA_FAST':           cfg.EMA_FAST,
+            'EMA_SLOW':           cfg.EMA_SLOW,
+            'VOLUME_SPIKE_MULT':  cfg.VOLUME_SPIKE_MULT,
+            'RSI_OVERBOUGHT':     cfg.RSI_OVERBOUGHT,
+            'RSI_OVERSOLD':       cfg.RSI_OVERSOLD,
+            'ATR_STOP_MULT':      cfg.ATR_STOP_MULT,
+            'ATR_TP_MULT':        cfg.ATR_TP_MULT,
+            'BREAKEVEN_TRIGGER':  cfg.BREAKEVEN_TRIGGER,
+            'STARTING_CAPITAL':   cfg.STARTING_CAPITAL,
+        }
+        for k, v in overrides.items():
+            if k in defaults:
+                try:
+                    defaults[k] = float(v) if '.' in str(v) else int(v)
+                except:
+                    defaults[k] = v
+        return jsonify(defaults)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/config', methods=['POST'])
+def update_config():
+    try:
+        data = request.json
+        with get_conn() as conn:
+            cur = conn.cursor()
+            for key, value in data.items():
+                cur.execute("""
+                    INSERT INTO config_overrides (key, value, updated_at)
+                    VALUES (%s, %s, NOW())
+                    ON CONFLICT (key) DO UPDATE SET
+                        value = EXCLUDED.value,
+                        updated_at = EXCLUDED.updated_at
+                """, (key, str(value)))
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/meta')
+def meta_reviews():
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+            cur.execute("SELECT * FROM meta_reviews ORDER BY reviewed_at DESC LIMIT 10")
+            rows = [dict(r) for r in cur.fetchall()]
+            for r in rows:
+                r['reviewed_at'] = r['reviewed_at'].isoformat() if r['reviewed_at'] else None
+            return jsonify(rows)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/performance')
+def performance():
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+            cur.execute("""
+                SELECT
+                    DATE(entered_at) as trade_date,
+                    COALESCE(SUM(pnl_usd) FILTER (WHERE status != 'open'), 0) as pnl,
+                    COUNT(*) FILTER (WHERE status != 'open') as trades,
+                    COUNT(*) FILTER (WHERE pnl_usd > 0) as wins
+                FROM trades
+                WHERE entered_at >= NOW() - INTERVAL '30 days'
+                GROUP BY DATE(entered_at)
+                ORDER BY trade_date
+            """)
+            daily = [dict(r) for r in cur.fetchall()]
+            for d in daily:
+                d['trade_date'] = d['trade_date'].isoformat()
+                d['pnl'] = round(float(d['pnl']), 2)
+
+            cur.execute("""
+                SELECT symbol,
+                    COUNT(*) FILTER (WHERE status != 'open') as trades,
+                    COUNT(*) FILTER (WHERE pnl_usd > 0) as wins,
+                    COALESCE(SUM(pnl_usd) FILTER (WHERE status != 'open'), 0) as pnl
+                FROM trades
+                WHERE entered_at >= NOW() - INTERVAL '30 days'
+                GROUP BY symbol ORDER BY pnl DESC
+            """)
+            by_symbol = [dict(r) for r in cur.fetchall()]
+            for s in by_symbol:
+                s['pnl'] = round(float(s['pnl']), 2)
+
+            return jsonify({'daily': daily, 'by_symbol': by_symbol})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 8080))
+    app.run(host='0.0.0.0', port=port, debug=False)
