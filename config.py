@@ -1,7 +1,10 @@
 # ============================================================
 #   AlphaBot — Simulated Futures Trading Bot
-#   Trades SPY/QQQ on Alpaca with 10x simulated leverage
-#   to replicate micro futures (MNQ/MES) behavior
+#   Trades QQQ on Alpaca with 10x simulated leverage
+#   to replicate micro futures (MNQ) behavior
+#
+#   QQQ only — most volatile, cleanest IEX data feed,
+#   least PDT friction of the available symbols
 # ============================================================
 
 import os
@@ -14,16 +17,15 @@ ALPACA_API_KEY    = os.environ.get("ALPACA_API_KEY", "")
 ALPACA_SECRET_KEY = os.environ.get("ALPACA_SECRET_KEY", "")
 
 # ── What we trade ────────────────────────────────────────────
-# SPY  = S&P 500 ETF  → simulates MES (Micro E-mini S&P)
-# QQQ  = Nasdaq ETF   → simulates MNQ (Micro E-mini Nasdaq)
-# NVDA, AAPL          → high volume momentum plays
+# QQQ = Nasdaq 100 ETF → simulates MNQ (Micro E-mini Nasdaq)
+# Single symbol only — avoids PDT spreading across symbols
+# and keeps IEX data feed fresh (high volume = fresh bars)
 SYMBOLS = ["SPY", "QQQ"]
-PRIMARY  = "QQQ"  # most volatile of the two   # most volatile of the four
+PRIMARY  = "QQQ"
 
 # ── Simulated futures leverage ────────────────────────────────
 # Multiplies paper P&L to simulate futures leverage behavior.
 # MNQ real leverage is roughly 10-20x. We use 10x to be conservative.
-# Stops and position sizing all scale with this automatically.
 SIMULATED_LEVERAGE = 10
 
 # ── Capital ──────────────────────────────────────────────────
@@ -44,10 +46,17 @@ MIN_SIGNAL_SCORE     = 3        # out of 5 signals must align
 
 # ── Risk / stops ─────────────────────────────────────────────
 ATR_PERIOD           = 14
-ATR_STOP_MULT        = 1.5      # stop = entry - (ATR * 1.5)
-ATR_TP_MULT          = 3.0      # take profit = entry + (ATR * 3.0)
+ATR_STOP_MULT        = 2.0      # widened from 1.5 → gives more room
+                                 # IEX 15-min delay means price has moved
+                                 # by the time we enter — wider stop needed
+ATR_TP_MULT          = 4.0      # widened from 3.0 → keeps R:R at 2:1
 BREAKEVEN_TRIGGER    = 10       # points profit before moving stop to entry
 TRAIL_AFTER_BE       = True
+
+# ── Data staleness ────────────────────────────────────────────
+# IEX feed can serve stale bars during low volume periods.
+# If the most recent bar is older than this, skip the symbol.
+MAX_BAR_AGE_MINUTES  = 20       # IEX has 15-min delay so 20 gives buffer
 
 # ── Scanning ─────────────────────────────────────────────────
 SCAN_INTERVAL_SEC    = 5
