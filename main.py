@@ -78,7 +78,7 @@ class AlphaBot:
     def _is_end_of_day(self) -> bool:
         now = datetime.now(ET)
         close_h, close_m = map(int, MARKET_CLOSE.split(":"))
-        eod = now.replace(hour=close_h - 1, minute=55, second=0)
+        eod = now.replace(hour=close_h, minute=close_m - 5, second=0)
         return now >= eod
 
     # ── Daily reset ───────────────────────────────────────────
@@ -169,8 +169,11 @@ class AlphaBot:
                     self.execution.exit_trade(
                         trade_id, trade["symbol"], price, reason
                     )
-                    # start cooldown for this symbol
+                    # start 30-min cooldown for this symbol
                     self._last_exit[trade["symbol"]] = time.time()
+                    # if it was a stop loss, start same-direction loss cooldown
+                    if reason == "stop":
+                        self.risk.record_loss(trade["symbol"], trade["side"])
 
     # ── Main scan cycle ───────────────────────────────────────
 
@@ -200,8 +203,15 @@ class AlphaBot:
                     self._run_slow_loop(symbol)
                 self._last_slow[symbol] = now
 
-        # ── Status log every 50 scans (~4 minutes) ───────────
-        if self._scan_count % 50 == 0:
+        # ── Status log ────────────────────────────────────────
+        # Every 50 scans (~4 min) when market is open
+        # Every 60 scans (~5 min) when market is closed — proves bot is alive
+        if self._is_market_open():
+            log_interval = 50
+        else:
+            log_interval = 60
+
+        if self._scan_count % log_interval == 0:
             open_trades  = get_open_trades()
             market_state = "OPEN" if self._is_market_open() else "CLOSED"
             log.info(
