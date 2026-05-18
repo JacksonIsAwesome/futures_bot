@@ -76,7 +76,7 @@ class AlphaBot:
     def _is_end_of_day(self) -> bool:
         now = datetime.now(ET)
         close_h, close_m = map(int, MARKET_CLOSE.split(":"))
-        eod = now.replace(hour=close_h, minute=close_m - 5, second=0)
+        eod = now.replace(hour=close_h - 1, minute=55, second=0)
         return now >= eod
 
     # ── Daily reset ───────────────────────────────────────────
