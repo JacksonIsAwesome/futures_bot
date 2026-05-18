@@ -307,6 +307,17 @@ def get_config_override(key, default):
         return default
 
 
+
+
+def update_stop_loss(trade_id, new_stop):
+    """Update stop loss for trailing stop — does not set breakeven_set flag."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE trades SET stop_loss=%s
+            WHERE id=%s AND status='open'
+        """, (new_stop, trade_id))
+
 def set_config_override(key, value):
     with get_conn() as conn:
         cur = conn.cursor()
