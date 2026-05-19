@@ -20,7 +20,7 @@ ALPACA_SECRET_KEY = os.environ.get("ALPACA_SECRET_KEY", "")
 # QQQ = Nasdaq 100 ETF → simulates MNQ (Micro E-mini Nasdaq)
 # Single symbol only — avoids PDT spreading across symbols
 # and keeps IEX data feed fresh (high volume = fresh bars)
-SYMBOLS = ["SPY", "QQQ"]
+SYMBOLS = ["QQQ"]
 PRIMARY  = "QQQ"
 
 # ── Simulated futures leverage ────────────────────────────────
