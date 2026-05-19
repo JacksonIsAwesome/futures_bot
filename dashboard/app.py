@@ -171,14 +171,21 @@ def meta_reviews():
 
 @app.route('/api/meta/run', methods=['POST'])
 def run_meta():
-    """Manually trigger a meta brain review."""
+    """
+    Set a flag in the DB telling the bot to run a meta brain review.
+    The bot checks this flag every scan and runs the review if set.
+    """
     try:
-        import sys
-        sys.path.insert(0, '/app')
-        from meta.brain import MetaBrain
-        brain = MetaBrain()
-        report = brain.run_review()
-        return jsonify({'success': True, 'report': report})
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO config_overrides (key, value, updated_at)
+                VALUES ('RUN_META_NOW', 'true', NOW())
+                ON CONFLICT (key) DO UPDATE SET
+                    value = 'true',
+                    updated_at = NOW()
+            """)
+        return jsonify({'success': True, 'message': 'Meta brain review queued — runs within 60 seconds'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
