@@ -167,6 +167,21 @@ def meta_reviews():
         return jsonify({'error': str(e)}), 500
 
 
+
+
+@app.route('/api/meta/run', methods=['POST'])
+def run_meta():
+    """Manually trigger a meta brain review."""
+    try:
+        import sys
+        sys.path.insert(0, '/app')
+        from meta.brain import MetaBrain
+        brain = MetaBrain()
+        report = brain.run_review()
+        return jsonify({'success': True, 'report': report})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/performance')
 def performance():
     try:
