@@ -724,8 +724,16 @@
 
 <!-- META BRAIN TAB -->
 <div id="tab-meta" class="content">
+  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+    <span style="font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted);">
+      Daily AI analysis — auto-runs at 5pm ET
+    </span>
+    <button class="refresh-btn" onclick="runMeta()" id="meta-run-btn">
+      <i class="ti ti-brain" aria-hidden="true"></i> Run Now
+    </button>
+  </div>
   <div id="meta-reviews-container">
-    <div class="empty-state">No reviews yet — first review runs at 5pm ET today.</div>
+    <div class="empty-state">No reviews yet — click "Run Now" or wait for 5pm ET.</div>
   </div>
 </div>
 
@@ -1083,6 +1091,32 @@ async function loadMeta() {
   } catch(e) { console.error(e); }
 }
 
+async function runMeta() {
+  const btn = document.getElementById('meta-run-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="ti ti-loader" aria-hidden="true"></i> Running...';
+  try {
+    const r = await fetch('/api/meta/run', { method: 'POST' });
+    const data = await r.json();
+    if (data.success) {
+      await loadMeta();
+      btn.innerHTML = '<i class="ti ti-check" aria-hidden="true"></i> Done!';
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="ti ti-brain" aria-hidden="true"></i> Run Now';
+      }, 3000);
+    } else {
+      btn.innerHTML = '<i class="ti ti-x" aria-hidden="true"></i> Error';
+      btn.disabled = false;
+      console.error(data.error);
+    }
+  } catch(e) {
+    btn.innerHTML = '<i class="ti ti-x" aria-hidden="true"></i> Error';
+    btn.disabled = false;
+    console.error(e);
+  }
+}
+
 function loadLogs() {
   fetch('/api/signals')
     .then(r => r.json())
@@ -1124,7 +1158,6 @@ function loadLogs() {
 
 marketStatus();
 loadOverview();
-loadConfig();
 setInterval(loadOverview, 30000);
 setInterval(marketStatus, 30000);
 setInterval(loadLogs, 60000);
