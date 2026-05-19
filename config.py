@@ -20,7 +20,7 @@ ALPACA_SECRET_KEY = os.environ.get("ALPACA_SECRET_KEY", "")
 # QQQ = Nasdaq 100 ETF → simulates MNQ (Micro E-mini Nasdaq)
 # Single symbol only — avoids PDT spreading across symbols
 # and keeps IEX data feed fresh (high volume = fresh bars)
-SYMBOLS = ["QQQ"]
+SYMBOLS = ["QQQ", "IVV", "NVDA", "TSLA", "TQQQ"]
 PRIMARY  = "QQQ"
 
 # ── Simulated futures leverage ────────────────────────────────
@@ -69,7 +69,7 @@ TRADE_PRIME_ONLY     = False
 # ── Meta Brain ───────────────────────────────────────────────
 META_REVIEW_HOUR     = 17       # 5pm ET after market close
 META_LOOKBACK_DAYS   = 7
-META_MIN_TRADES      = 10
+META_MIN_TRADES      = 5
 META_ADJUST_STEP     = 0.1
 
 # ── Database ─────────────────────────────────────────────────
