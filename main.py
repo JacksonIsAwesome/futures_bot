@@ -183,7 +183,7 @@ class AlphaBot:
         actions = self.risk.manage_open_trades(current_prices)
 
         # execute any triggered actions
-        for trade_id, action, price, reason in actions:
+        for trade_id, action, price, reason, side in actions:
             if action == "close":
                 # find the symbol for this trade
                 trade = next((t for t in open_trades if t["id"] == trade_id), None)
