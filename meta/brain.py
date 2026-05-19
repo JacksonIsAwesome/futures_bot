@@ -337,7 +337,7 @@ class MetaBrain:
 
 Here is today's performance data (last {config.META_LOOKBACK_DAYS} days):
 
-{json.dumps(data_summary, indent=2)}
+{json.dumps(data_summary, indent=2, default=float)}
 
 The bot uses 5 signals scored 0-5. A trade fires when score >= {config.MIN_SIGNAL_SCORE}.
 Signals: EMA crossover, VWAP side, volume spike, RSI confirmation, price action.
