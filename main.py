@@ -78,7 +78,7 @@ class AlphaBot:
     def _is_end_of_day(self) -> bool:
         now = datetime.now(ET)
         close_h, close_m = map(int, MARKET_CLOSE.split(":"))
-        eod = now.replace(hour=close_h - 1, minute=55, second=0)
+        eod = now.replace(hour=close_h, minute=close_m - 5, second=0)
         return now >= eod
 
     # ── Daily reset ───────────────────────────────────────────
@@ -183,7 +183,7 @@ class AlphaBot:
         actions = self.risk.manage_open_trades(current_prices)
 
         # execute any triggered actions
-        for trade_id, action, price, reason, side in actions:
+        for trade_id, action, price, reason in actions:
             if action == "close":
                 # find the symbol for this trade
                 trade = next((t for t in open_trades if t["id"] == trade_id), None)
@@ -225,6 +225,10 @@ class AlphaBot:
                     self._run_slow_loop(symbol)
                 self._last_slow[symbol] = now
 
+        # ── Check for manual meta brain trigger ──────────────
+        if self._scan_count % 12 == 0:   # check every ~60 seconds
+            self._check_meta_flag()
+
         # ── Status log ────────────────────────────────────────
         # Every 50 scans (~4 min) when market is open
         # Every 60 scans (~5 min) when market is closed — proves bot is alive
@@ -248,6 +252,19 @@ class AlphaBot:
         log.info("[MAIN] Running daily meta brain review...")
         upsert_daily_summary()
         self.meta.run_review()
+
+    def _check_meta_flag(self):
+        """Check if dashboard requested a manual meta brain run."""
+        try:
+            from core.database import get_config_override, set_config_override
+            flag = get_config_override("RUN_META_NOW", None)
+            if flag == "true":
+                log.info("[MAIN] Manual meta brain review requested from dashboard...")
+                set_config_override("RUN_META_NOW", "false")
+                upsert_daily_summary()
+                self.meta.run_review()
+        except Exception as e:
+            log.error(f"[MAIN] Meta flag check failed: {e}")
 
     # ── Run ───────────────────────────────────────────────────
 
