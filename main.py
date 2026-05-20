@@ -216,13 +216,13 @@ class AlphaBot:
             self._run_fast_loop()
 
         # ── Slow loop (every 60s per symbol) ──────────────────
-        now = time.time()
-        for symbol in SYMBOLS:
-            last = self._last_slow.get(symbol, 0)
-            if now - last >= 60:
-                if self._is_market_open():
+        if self._is_market_open():
+            now = time.time()
+            for symbol in SYMBOLS:
+                last = self._last_slow.get(symbol, 0)
+                if now - last >= 60:
                     self._run_slow_loop(symbol)
-                self._last_slow[symbol] = now
+                    self._last_slow[symbol] = now
 
         # ── Manual meta brain trigger check ───────────────────
         if self._scan_count % 12 == 0:
