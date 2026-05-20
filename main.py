@@ -2,15 +2,15 @@
 main.py — AlphaBot Main Loop
 
 The brain of the operation. Runs continuously, scanning every 5 seconds.
-Coordinates data → strategy → risk → execution in a clean loop.
+Coordinates stream → strategy → risk → execution in a clean loop.
 
 Architecture:
+  - STREAM: WebSocket real-time price feed (replaces bar polling)
   - FAST loop (5s): price check, stop/TP management
-  - SLOW loop (60s): full indicator recalculation, new signal evaluation
+  - SLOW loop (60s): signal evaluation from live stream cache
   - DAILY loop (5pm ET): meta brain review, position close, daily reset
 """
 
-import os
 import time
 import logging
 import schedule
@@ -21,12 +21,13 @@ from config import (
     SYMBOLS, STARTING_CAPITAL, SCAN_INTERVAL_SEC,
     MARKET_OPEN, MARKET_CLOSE, META_REVIEW_HOUR
 )
-from core.database   import init_db, get_open_trades, upsert_daily_summary
-from core.data       import DataFetcher
-from core.execution  import ExecutionEngine
-from risk.manager    import RiskManager
+from core.database      import init_db, get_open_trades, upsert_daily_summary
+from core.data          import DataFetcher
+from core.stream        import PriceStream
+from core.execution     import ExecutionEngine
+from risk.manager       import RiskManager
 from strategies.ema_vwap import EMAVWAPStrategy
-from meta.brain      import MetaBrain
+from meta.brain         import MetaBrain
 
 # ── Logging setup ─────────────────────────────────────────────
 logging.basicConfig(
@@ -47,27 +48,38 @@ class AlphaBot:
 
         init_db()
 
+        # data fetcher kept for execution engine (order placement)
         self.data      = DataFetcher()
+        self.stream    = PriceStream(symbols=SYMBOLS)
         self.execution = ExecutionEngine(self.data)
         self.risk      = RiskManager(STARTING_CAPITAL)
         self.strategy  = EMAVWAPStrategy()
         self.meta      = MetaBrain()
 
-        # cache for full indicator dataframes (updated every 60s)
-        self._df_cache    = {}
-        self._last_slow   = {}   # symbol -> last slow-loop time
-        self._last_exit   = {}   # symbol -> timestamp of last exit (cooldown)
-        self._scan_count  = 0
-        self.COOLDOWN_SEC = 30 * 60   # 30 min cooldown per symbol after exit
-        self._last_date   = date.today()
+        self._last_slow  = {}   # symbol -> last slow-loop timestamp
+        self._last_exit  = {}   # symbol -> timestamp of last exit (cooldown)
+        self._scan_count = 0
+        self.COOLDOWN_SEC = 30 * 60
+        self._last_date  = date.today()
+
+        log.info("[DB] Database initialized ✓")
+        log.info("[DATA] Alpaca data fetcher initialized ✓")
+        log.info("[EXEC] Execution engine initialized | paper mode | leverage=10x")
+        log.info(f"[RISK] Risk manager initialized | Capital: ${STARTING_CAPITAL:,.2f}")
+        log.info("[STRAT] EMA/VWAP strategy loaded ✓")
+        log.info("[META] Meta brain initialized ✓")
+
+        # start stream last — seeds bars then opens WebSocket
+        self.stream.start()
 
         log.info("[BOOT] All modules initialized ✓")
+        log.info(f"[MAIN] Starting scan loop (every {SCAN_INTERVAL_SEC}s)")
 
     # ── Market hours ──────────────────────────────────────────
 
     def _is_market_open(self) -> bool:
         now = datetime.now(ET)
-        if now.weekday() >= 5:   # weekend
+        if now.weekday() >= 5:
             return False
         open_h,  open_m  = map(int, MARKET_OPEN.split(":"))
         close_h, close_m = map(int, MARKET_CLOSE.split(":"))
@@ -78,7 +90,7 @@ class AlphaBot:
     def _is_end_of_day(self) -> bool:
         now = datetime.now(ET)
         close_h, close_m = map(int, MARKET_CLOSE.split(":"))
-        eod = now.replace(hour=close_h, minute=close_m - 5, second=0)
+        eod = now.replace(hour=close_h - 1, minute=55, second=0)
         return now >= eod
 
     # ── Daily reset ───────────────────────────────────────────
@@ -90,52 +102,44 @@ class AlphaBot:
             self.risk.reset_daily()
             self._last_date = today
 
-    # ── Slow loop — full recalculation ────────────────────────
+    # ── Slow loop — signal evaluation ─────────────────────────
 
-    def _run_slow_loop(self, symbol):
+    def _run_slow_loop(self, symbol: str):
         """
         Runs every 60 seconds per symbol.
-        Fetches full OHLCV, recalculates all indicators, evaluates signal.
+        Reads live cache from stream, evaluates signal, enters trade if ready.
+        No more bar fetching — stream handles all indicator updates.
         """
-        df = self.data.get_full_snapshot(symbol)
-        if df is not None:
-            self._df_cache[symbol] = df
+        cache = self.stream.get_price(symbol)
 
-        df = self._df_cache.get(symbol)
-        if df is None:
+        if cache is None:
+            log.warning(f"[STREAM] {symbol}: no cache available")
             return
 
-        signal = self.strategy.evaluate(symbol, df)
+        if cache["stale"]:
+            updated = cache.get("updated_at")
+            if updated:
+                age = (datetime.utcnow() - updated).total_seconds()
+                log.warning(
+                    f"[DATA] {symbol} data is stale — "
+                    f"last tick was {age:.1f}s ago "
+                    f"(max allowed: {int(120)}s). Skipping."
+                )
+            else:
+                log.warning(f"[DATA] {symbol} data is stale — no ticks yet. Skipping.")
+            return
+
+        signal = self.strategy.evaluate(symbol, cache)
         if signal is None:
             return
 
-        # only attempt entry if signal has a direction
         if signal.direction is None:
             return
 
-        # ── Override price with live quote ────────────────────
-        # Indicators (EMA, VWAP, RSI) are fine on delayed bars —
-        # they're used for direction only. But the actual entry
-        # price, stop, and TP must use the live price so we
-        # don't enter a trade based on a 15-minute-old price.
-        live_price = self.data.get_latest_price(symbol)
-        if live_price and live_price > 0:
-            old_price = signal.price
-            # recalculate stop and TP from live price using same ATR
-            if signal.direction == "long":
-                signal.stop_loss   = round(live_price - signal.atr * 2.0, 4)
-                signal.take_profit = round(live_price + signal.atr * 4.0, 4)
-            else:
-                signal.stop_loss   = round(live_price + signal.atr * 2.0, 4)
-                signal.take_profit = round(live_price - signal.atr * 4.0, 4)
-            signal.price = live_price
-            if abs(live_price - old_price) > 0.01:
-                log.info(
-                    f"[MAIN] {symbol} live price override: "
-                    f"{old_price:.2f} → {live_price:.2f}"
-                )
+        # price from stream is already live — no override needed
+        # stream.get_price() returns the latest tick price in real time
 
-        # check 30-minute cooldown per symbol
+        # 30-min cooldown per symbol after exit
         last_exit = self._last_exit.get(symbol, 0)
         if time.time() - last_exit < self.COOLDOWN_SEC:
             mins_left = int((self.COOLDOWN_SEC - (time.time() - last_exit)) / 60)
@@ -154,27 +158,26 @@ class AlphaBot:
             log.warning(f"[MAIN] {symbol} position size = 0, skipping")
             return
 
-        # enter trade
         self.execution.enter_trade(signal, qty)
 
-    # ── Fast loop — price checks and stop management ──────────
+    # ── Fast loop — stop/TP management ───────────────────────
 
     def _run_fast_loop(self):
         """
         Runs every 5 seconds.
-        Gets latest prices, checks stops/TPs, manages breakeven.
+        Reads live prices from stream cache for open position management.
         """
         open_trades = get_open_trades()
         if not open_trades:
             return
 
-        # get latest prices for all open symbols
-        symbols_needed = list(set(t["symbol"] for t in open_trades))
+        # get current prices from stream cache (real-time, no API call)
         current_prices = {}
-        for sym in symbols_needed:
-            price = self.data.get_latest_price(sym)
-            if price:
-                current_prices[sym] = price
+        for trade in open_trades:
+            sym   = trade["symbol"]
+            cache = self.stream.get_price(sym)
+            if cache and not cache["stale"] and cache["price"]:
+                current_prices[sym] = cache["price"]
 
         if not current_prices:
             return
@@ -182,18 +185,14 @@ class AlphaBot:
         # let risk manager check stops and breakeven
         actions = self.risk.manage_open_trades(current_prices)
 
-        # execute any triggered actions
-        for trade_id, action, price, reason in actions:
+        for trade_id, action, price, reason, side in actions:
             if action == "close":
-                # find the symbol for this trade
                 trade = next((t for t in open_trades if t["id"] == trade_id), None)
                 if trade:
                     self.execution.exit_trade(
                         trade_id, trade["symbol"], price, reason
                     )
-                    # start 30-min cooldown for this symbol
                     self._last_exit[trade["symbol"]] = time.time()
-                    # if it was a stop loss, start same-direction loss cooldown
                     if reason == "stop":
                         self.risk.record_loss(trade["symbol"], trade["side"])
 
@@ -212,11 +211,11 @@ class AlphaBot:
                 upsert_daily_summary()
             return
 
-        # ── Always run fast loop ──────────────────────────────
+        # ── Fast loop (every scan) ────────────────────────────
         if self._is_market_open():
             self._run_fast_loop()
 
-        # ── Slow loop every ~60 seconds per symbol ────────────
+        # ── Slow loop (every 60s per symbol) ──────────────────
         now = time.time()
         for symbol in SYMBOLS:
             last = self._last_slow.get(symbol, 0)
@@ -225,18 +224,12 @@ class AlphaBot:
                     self._run_slow_loop(symbol)
                 self._last_slow[symbol] = now
 
-        # ── Check for manual meta brain trigger ──────────────
-        if self._scan_count % 12 == 0:   # check every ~60 seconds
+        # ── Manual meta brain trigger check ───────────────────
+        if self._scan_count % 12 == 0:
             self._check_meta_flag()
 
         # ── Status log ────────────────────────────────────────
-        # Every 50 scans (~4 min) when market is open
-        # Every 60 scans (~5 min) when market is closed — proves bot is alive
-        if self._is_market_open():
-            log_interval = 50
-        else:
-            log_interval = 60
-
+        log_interval = 50 if self._is_market_open() else 60
         if self._scan_count % log_interval == 0:
             open_trades  = get_open_trades()
             market_state = "OPEN" if self._is_market_open() else "CLOSED"
@@ -254,7 +247,6 @@ class AlphaBot:
         self.meta.run_review()
 
     def _check_meta_flag(self):
-        """Check if dashboard requested a manual meta brain run."""
         try:
             from core.database import get_config_override, set_config_override
             flag = get_config_override("RUN_META_NOW", None)
@@ -269,9 +261,6 @@ class AlphaBot:
     # ── Run ───────────────────────────────────────────────────
 
     def run(self):
-        log.info(f"[MAIN] Starting scan loop (every {SCAN_INTERVAL_SEC}s)")
-
-        # schedule daily review at 5pm ET
         schedule.every().day.at(f"{META_REVIEW_HOUR:02d}:00").do(self._daily_review)
 
         while True:
@@ -282,12 +271,13 @@ class AlphaBot:
 
             except KeyboardInterrupt:
                 log.info("[MAIN] Shutting down...")
+                self.stream.stop()
                 self.execution.close_all_positions("shutdown")
                 break
 
             except Exception as e:
                 log.error(f"[MAIN] Scan error: {e}", exc_info=True)
-                time.sleep(10)   # brief pause on error, then continue
+                time.sleep(10)
 
 
 if __name__ == "__main__":
