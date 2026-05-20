@@ -12,28 +12,6 @@ On startup:
 The strategy reads from stream.get_price(symbol) instead of data.py.
 If the stream is down or stale, falls back to the last known price
 with a staleness flag so the bot can skip the symbol.
-
-Usage in main.py:
-    from core.stream import PriceStream
-    stream = PriceStream(symbols=config.SYMBOLS)
-    stream.start()   # non-blocking, runs in background thread
-    ...
-    cache = stream.get_price("NVDA")
-    # cache = {
-    #   "price": 224.46,
-    #   "volume": 12345,
-    #   "vwap": 224.10,
-    #   "ema9": 223.80,
-    #   "ema21": 223.50,
-    #   "atr": 0.44,
-    #   "rsi": 58.2,
-    #   "high": 225.00,
-    #   "low": 223.00,
-    #   "prev_high": 224.50,
-    #   "prev_low": 223.20,
-    #   "updated_at": datetime(...),
-    #   "stale": False
-    # }
 """
 
 import json
@@ -52,16 +30,15 @@ log = logging.getLogger(__name__)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-WS_URL        = "wss://stream.data.alpaca.markets/v2/iex"
-BARS_URL      = "https://data.alpaca.markets/v2/stocks/{symbol}/bars"
-STALE_SECONDS = 120   # mark stale if no tick for 2 minutes
-RECONNECT_DELAY = 5   # seconds between reconnect attempts
-BAR_LIMIT     = 50    # bars to fetch on startup for indicator seeding
+WS_URL          = "wss://stream.data.alpaca.markets/v2/iex"
+BARS_URL        = "https://data.alpaca.markets/v2/stocks/{symbol}/bars"
+STALE_SECONDS   = 120
+RECONNECT_DELAY = 10   # increased from 5 to give Alpaca time to release connection
+BAR_LIMIT       = 50
 
 # ── Indicator math ────────────────────────────────────────────────────────────
 
 def _ema(prices: list, period: int) -> float:
-    """Calculate EMA from a list of prices."""
     if len(prices) < period:
         return sum(prices) / len(prices)
     k = 2 / (period + 1)
@@ -72,7 +49,6 @@ def _ema(prices: list, period: int) -> float:
 
 
 def _atr(highs: list, lows: list, closes: list, period: int = 14) -> float:
-    """Calculate ATR from bar data."""
     if len(closes) < 2:
         return abs(highs[-1] - lows[-1]) if highs and lows else 0.5
     trs = []
@@ -88,7 +64,6 @@ def _atr(highs: list, lows: list, closes: list, period: int = 14) -> float:
 
 
 def _rsi(closes: list, period: int = 14) -> float:
-    """Calculate RSI from close prices."""
     if len(closes) < period + 1:
         return 50.0
     gains, losses = [], []
@@ -105,7 +80,6 @@ def _rsi(closes: list, period: int = 14) -> float:
 
 
 def _vwap(prices: list, volumes: list) -> float:
-    """Calculate VWAP from intraday prices and volumes."""
     if not prices or not volumes:
         return prices[-1] if prices else 0
     total_vol = sum(volumes)
@@ -125,7 +99,6 @@ class SymbolCache:
         self.volume     = 0
         self.updated_at = None
 
-        # indicator values (seeded from bars, updated on ticks)
         self.ema9       = None
         self.ema21      = None
         self.atr        = None
@@ -136,20 +109,15 @@ class SymbolCache:
         self.prev_high  = None
         self.prev_low   = None
 
-        # rolling buffers for indicator updates
-        self._closes    = deque(maxlen=50)
-        self._highs     = deque(maxlen=50)
-        self._lows      = deque(maxlen=50)
-        self._intra_prices  = deque(maxlen=500)  # intraday for VWAP
-        self._intra_volumes = deque(maxlen=500)
+        self._closes         = deque(maxlen=50)
+        self._highs          = deque(maxlen=50)
+        self._lows           = deque(maxlen=50)
+        self._intra_prices   = deque(maxlen=500)
+        self._intra_volumes  = deque(maxlen=500)
 
         self._lock = threading.Lock()
 
     def seed_from_bars(self, bars: list):
-        """
-        Seed indicators from historical bar data on startup.
-        bars: list of dicts with keys: c (close), h (high), l (low), v (volume)
-        """
         if not bars:
             log.warning(f"[STREAM] No bars to seed {self.symbol}")
             return
@@ -175,13 +143,16 @@ class SymbolCache:
             self.prev_high = max(highs[-21:-1]) if len(highs) > 20 else self.high
             self.prev_low  = min(lows[-21:-1])  if len(lows)  > 20 else self.low
 
-            # seed intraday buffers
+            # seed intraday VWAP buffers with today's bars only
             today = datetime.utcnow().date()
             for b in bars:
                 bar_time = b.get("t", "")
                 if str(today) in str(bar_time):
                     self._intra_prices.append(b["c"])
                     self._intra_volumes.append(b["v"])
+
+            # mark as freshly seeded so staleness check passes
+            self.updated_at = datetime.utcnow()
 
         log.info(
             f"[STREAM] {self.symbol} seeded | "
@@ -190,44 +161,35 @@ class SymbolCache:
         )
 
     def on_tick(self, price: float, volume: int = 0):
-        """Update price and recalculate indicators on every trade tick."""
         with self._lock:
             self.price      = price
             self.volume     = volume
             self.updated_at = datetime.utcnow()
 
-            # update close buffer
             self._closes.append(price)
             closes = list(self._closes)
 
-            # update intraday VWAP buffers
             self._intra_prices.append(price)
             self._intra_volumes.append(volume if volume > 0 else 1)
 
-            # recalculate EMAs on every tick
             if len(closes) >= 9:
                 self.ema9 = _ema(closes, 9)
             if len(closes) >= 21:
                 self.ema21 = _ema(closes, 21)
-
-            # RSI updates every tick
             if len(closes) >= 15:
                 self.rsi = _rsi(closes)
 
-            # VWAP from intraday data
             ip = list(self._intra_prices)
             iv = list(self._intra_volumes)
             if ip:
                 self.vwap = _vwap(ip, iv)
 
-            # update high/low
             if self.high is None or price > self.high:
                 self.high = price
             if self.low is None or price < self.low:
                 self.low = price
 
     def to_dict(self) -> dict:
-        """Return snapshot of current state for the strategy to read."""
         with self._lock:
             stale = (
                 self.updated_at is None or
@@ -259,45 +221,37 @@ class PriceStream:
     """
 
     def __init__(self, symbols: list):
-        self.symbols   = [s.upper() for s in symbols]
-        self._cache    = {s: SymbolCache(s) for s in self.symbols}
-        self._ws       = None
-        self._running  = False
-        self._thread   = None
-        self._ready    = threading.Event()  # set when stream is live
+        self.symbols  = [s.upper() for s in symbols]
+        self._cache   = {s: SymbolCache(s) for s in self.symbols}
+        self._ws      = None
+        self._running = False
+        self._thread  = None
+        self._ready   = threading.Event()
+        self._subscribed = False
 
     # ── Public API ────────────────────────────────────────────
 
     def start(self):
-        """
-        Seed indicators from bars, then start WebSocket in background.
-        Blocks until the stream is authenticated and subscribed.
-        """
         log.info(f"[STREAM] Starting for {self.symbols}")
         self._seed_all()
         self._running = True
         self._thread  = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()
 
-        # wait up to 15s for connection
-        if self._ready.wait(timeout=15):
+        # wait up to 20s for connection — longer to handle 406 retry
+        if self._ready.wait(timeout=20):
             log.info("[STREAM] ✓ WebSocket live and subscribed")
         else:
-            log.warning("[STREAM] WebSocket not ready after 15s — using seeded data")
+            log.warning("[STREAM] WebSocket not ready after 20s — using seeded data")
 
     def stop(self):
-        """Gracefully shut down the stream."""
         self._running = False
         if self._ws:
             self._ws.close()
 
     def get_price(self, symbol: str) -> dict:
-        """
-        Get current price and indicators for a symbol.
-        Returns None if symbol not tracked.
-        """
         symbol = symbol.upper()
-        cache = self._cache.get(symbol)
+        cache  = self._cache.get(symbol)
         if cache is None:
             return None
         return cache.to_dict()
@@ -312,7 +266,6 @@ class PriceStream:
     # ── Bar seeding ───────────────────────────────────────────
 
     def _seed_all(self):
-        """Fetch historical bars for all symbols to seed indicators."""
         for symbol in self.symbols:
             try:
                 bars = self._fetch_bars(symbol)
@@ -321,9 +274,8 @@ class PriceStream:
                 log.error(f"[STREAM] Failed to seed {symbol}: {e}")
 
     def _fetch_bars(self, symbol: str) -> list:
-        """Fetch recent 1-minute bars from Alpaca REST API."""
         end   = datetime.utcnow()
-        start = end - timedelta(hours=8)  # last 8 hours covers today + premarket
+        start = end - timedelta(hours=8)
 
         resp = requests.get(
             BARS_URL.format(symbol=symbol),
@@ -348,9 +300,9 @@ class PriceStream:
     # ── WebSocket loop ────────────────────────────────────────
 
     def _run_loop(self):
-        """Main reconnect loop. Keeps trying if connection drops."""
         while self._running:
             try:
+                self._subscribed = False
                 self._connect()
             except Exception as e:
                 log.error(f"[STREAM] WebSocket error: {e}")
@@ -360,7 +312,6 @@ class PriceStream:
                 time.sleep(RECONNECT_DELAY)
 
     def _connect(self):
-        """Open one WebSocket connection."""
         log.info(f"[STREAM] Connecting to {WS_URL}")
         self._ws = websocket.WebSocketApp(
             WS_URL,
@@ -390,44 +341,55 @@ class PriceStream:
             log.error(f"[STREAM] Message parse error: {e}")
 
     def _handle_message(self, ws, msg: dict):
-        t = msg.get("T")  # message type
+        t = msg.get("T")
 
-        if t == "connected":
+        # ── connection confirmed ──────────────────────────────
+        if t == "success" and msg.get("msg") == "connected":
             log.info("[STREAM] Connected to Alpaca stream")
+            # auth is sent in _on_open, nothing to do here
 
-        elif t == "success":
-            log.info(f"[STREAM] Success message: {msg}")  # temp debug
-            if msg.get("msg") == "connected":
-                pass  # just acknowledge, wait for auth response
-            elif msg.get("msg") == "authenticated":
-                log.info("[STREAM] Authenticated ✓ — subscribing")
-                ws.send(json.dumps({
-                    "action":  "subscribe",
-                    "trades":  self.symbols,
-                    "quotes":  [],
-                    "bars":    [],
-                }))
-            elif msg.get("msg") == "subscribed" or msg.get("trades"):
-                log.info(f"[STREAM] Subscribed to {self.symbols} ✓")
-                self._ready.set()
+        # ── authenticated ─────────────────────────────────────
+        elif t == "success" and msg.get("msg") == "authenticated":
+            log.info("[STREAM] Authenticated ✓ — subscribing")
+            ws.send(json.dumps({
+                "action": "subscribe",
+                "trades": self.symbols,
+                "quotes": [],
+                "bars":   [],
+            }))
 
+        # ── subscription confirmed ────────────────────────────
+        # Alpaca sends back a success message with the subscribed
+        # trades list, not a separate "subscribed" msg field
+        elif t == "subscription":
+            trades = msg.get("trades", [])
+            log.info(f"[STREAM] Subscribed ✓ — receiving trades for {trades}")
+            self._subscribed = True
+            self._ready.set()
+
+        # ── error ─────────────────────────────────────────────
         elif t == "error":
             code = msg.get("code")
-            log.error(f"[STREAM] Error: {msg}")
+            err  = msg.get("msg", "unknown")
+            log.error(f"[STREAM] Error {code}: {err}")
             if code == 406:
-                log.info("[STREAM] Connection limit — waiting 10s for old connection to clear...")
-                time.sleep(10)
+                # connection limit — old connection still open on Alpaca's side
+                # close this one and wait for reconnect loop to retry
+                log.warning("[STREAM] Connection limit (406) — closing and retrying in 10s")
                 ws.close()
 
+        # ── trade tick ────────────────────────────────────────
         elif t == "t":
-            # trade tick
             symbol = msg.get("S", "").upper()
             price  = msg.get("p")
             size   = msg.get("s", 0)
             if symbol in self._cache and price:
                 self._cache[symbol].on_tick(float(price), int(size))
 
-        # "q" = quote (bid/ask) — ignored for now, trades are enough
+        # ── anything else — log it so we can see what Alpaca sends ──
+        else:
+            if t not in (None,):
+                log.debug(f"[STREAM] Unhandled message type '{t}': {msg}")
 
     def _on_error(self, ws, error):
         log.error(f"[STREAM] WebSocket error: {error}")
@@ -435,3 +397,4 @@ class PriceStream:
     def _on_close(self, ws, code, msg):
         log.warning(f"[STREAM] WebSocket closed — code={code} msg={msg}")
         self._ready.clear()
+        self._subscribed = False
