@@ -4,16 +4,21 @@ strategies/ema_vwap.py — EMA + VWAP Momentum Strategy
 The core trading logic. Evaluates 5 signals and scores them.
 A trade fires when MIN_SIGNAL_SCORE or more align.
 
+Now reads from the live stream cache instead of a bar dataframe.
+The cache dict comes from PriceStream.get_price(symbol) and contains
+real-time price, EMA9, EMA21, ATR, RSI, VWAP, high, low, prev_high,
+prev_low — all calculated live from WebSocket ticks.
+
 Signals evaluated:
   1. EMA crossover    — 9 EMA crossed above/below 21 EMA
   2. VWAP side        — price is on the right side of VWAP
-  3. Volume spike     — current volume > 1.5x 20-bar average
+  3. Volume spike     — current volume > VOLUME_SPIKE_MULT x recent avg
   4. RSI confirmation — RSI not overbought on longs / oversold on shorts
   5. Price action     — higher highs + higher lows (long) or opposite (short)
 
-Entry: all signals align, score >= MIN_SIGNAL_SCORE
-Stop:  ATR * ATR_STOP_MULT below entry
-TP:    ATR * ATR_TP_MULT above entry (2:1 minimum R:R)
+Entry: score >= MIN_SIGNAL_SCORE
+Stop:  ATR * ATR_STOP_MULT
+TP:    ATR * ATR_TP_MULT
 """
 
 import logging
@@ -28,8 +33,8 @@ log = logging.getLogger(__name__)
 @dataclass
 class Signal:
     symbol:       str
-    direction:    Optional[str]   # 'long', 'short', or None
-    score:        int             # 0-5
+    direction:    Optional[str]
+    score:        int
     price:        float
     atr:          float
     stop_loss:    float
@@ -59,102 +64,130 @@ class EMAVWAPStrategy:
     """
     EMA + VWAP momentum strategy.
     Reads live config overrides from DB so meta brain can tune it.
+    Reads market data from the live stream cache dict.
     """
 
     def __init__(self):
         log.info("[STRAT] EMA/VWAP strategy loaded ✓")
+        # rolling volume buffer per symbol for spike detection
+        # stream gives us per-tick volume, we track a short window
+        self._vol_window = {}   # symbol -> list of recent tick volumes
 
     def _get_threshold(self, key, default):
-        """Pull threshold from DB overrides (meta brain adjustable)."""
         return get_config_override(key, default)
 
-    def evaluate(self, symbol, df) -> Optional[Signal]:
+    def _update_vol_window(self, symbol: str, volume: int, maxlen: int = 20):
+        """Track recent tick volumes to calculate a spike multiplier."""
+        if symbol not in self._vol_window:
+            self._vol_window[symbol] = []
+        self._vol_window[symbol].append(volume)
+        if len(self._vol_window[symbol]) > maxlen:
+            self._vol_window[symbol].pop(0)
+
+    def _vol_spike_mult(self, symbol: str, current_vol: int) -> float:
         """
-        Evaluate the latest bar and return a Signal object.
-        Returns None if data is insufficient.
+        Return how many times larger current volume is vs recent average.
+        Falls back to 1.0 if not enough data yet.
         """
-        if df is None or len(df) < 50:
-            log.debug(f"[STRAT] {symbol}: insufficient data")
+        window = self._vol_window.get(symbol, [])
+        if len(window) < 5:
+            return 1.0
+        avg = sum(window[:-1]) / len(window[:-1])   # avg excluding current
+        if avg == 0:
+            return 1.0
+        return current_vol / avg
+
+    def evaluate(self, symbol: str, cache: dict) -> Optional[Signal]:
+        """
+        Evaluate current stream cache and return a Signal object.
+        cache: dict from PriceStream.get_price(symbol)
+        Returns None if data is missing or stream is stale.
+        """
+        # ── Guard: need valid live data ───────────────────────
+        if cache is None:
+            log.debug(f"[STRAT] {symbol}: no cache")
             return None
 
-        # pull current values from latest bar
-        row      = df.iloc[-1]
-        prev     = df.iloc[-2]
-        price    = float(row["close"])
-        atr      = float(row["atr"])
-        vwap     = float(row["vwap"])
-        rsi      = float(row["rsi"])
-        vol_mult = float(row["vol_spike"])
-        ema_fast = float(row["ema_fast"])
-        ema_slow = float(row["ema_slow"])
+        if cache.get("stale"):
+            log.warning(f"[STRAT] {symbol}: stream stale — skipping")
+            return None
 
-        # get tunable thresholds (meta brain can adjust)
+        price    = cache.get("price")
+        ema9     = cache.get("ema9")
+        ema21    = cache.get("ema21")
+        atr      = cache.get("atr")
+        rsi      = cache.get("rsi")
+        vwap     = cache.get("vwap")
+        high     = cache.get("high")
+        low      = cache.get("low")
+        prev_high = cache.get("prev_high")
+        prev_low  = cache.get("prev_low")
+        volume   = cache.get("volume", 0)
+
+        # need all core values
+        if any(v is None for v in [price, ema9, ema21, atr, rsi, vwap]):
+            log.debug(f"[STRAT] {symbol}: incomplete indicators")
+            return None
+
+        if atr == 0:
+            log.debug(f"[STRAT] {symbol}: ATR is 0 — skipping")
+            return None
+
+        # ── Get tunable thresholds ────────────────────────────
         min_score    = int(self._get_threshold("MIN_SIGNAL_SCORE", config.MIN_SIGNAL_SCORE))
         vol_mult_req = float(self._get_threshold("VOLUME_SPIKE_MULT", config.VOLUME_SPIKE_MULT))
         rsi_ob       = float(self._get_threshold("RSI_OVERBOUGHT",   config.RSI_OVERBOUGHT))
         rsi_os       = float(self._get_threshold("RSI_OVERSOLD",     config.RSI_OVERSOLD))
+        stop_mult    = float(self._get_threshold("ATR_STOP_MULT",    config.ATR_STOP_MULT))
+        tp_mult      = float(self._get_threshold("ATR_TP_MULT",      config.ATR_TP_MULT))
 
-        # ── Determine direction from EMA crossover ────────────
-        # Check if a crossover just happened in last 3 bars
-        recent = df.iloc[-3:]
-        long_cross  = any(recent["ema_cross"] > 0)   # fast crossed above slow
-        short_cross = any(recent["ema_cross"] < 0)   # fast crossed below slow
-
-        # also consider sustained trend if no fresh cross
-        trend_long  = ema_fast > ema_slow
-        trend_short = ema_fast < ema_slow
-
-        # prefer fresh cross, fall back to trend
-        if long_cross:
+        # ── Direction from EMA relationship ───────────────────
+        if ema9 > ema21:
             direction = "long"
-        elif short_cross:
-            direction = "short"
-        elif trend_long:
-            direction = "long"
-        elif trend_short:
+        elif ema9 < ema21:
             direction = "short"
         else:
-            direction = None
-
-        if direction is None:
             return None
 
-        # ── Evaluate each signal ──────────────────────────────
+        # ── Signal 1: EMA crossover / trend ───────────────────
+        # With live ticks we can't easily detect a fresh cross,
+        # so we use the sustained trend as the signal.
+        # A fresh cross will naturally appear here as ema9 moves
+        # through ema21 over successive ticks.
+        ema_ok = (ema9 > ema21) if direction == "long" else (ema9 < ema21)
 
-        # 1. EMA crossover or sustained trend
-        ema_ok = long_cross if direction == "long" else short_cross
-        if not ema_ok:
-            # sustained trend still counts but lower conviction
-            ema_ok = trend_long if direction == "long" else trend_short
-
-        # 2. VWAP side — price must be on correct side
+        # ── Signal 2: VWAP side ───────────────────────────────
         if direction == "long":
             vwap_ok = price > vwap
         else:
             vwap_ok = price < vwap
 
-        # 3. Volume spike
-        vol_ok = vol_mult >= vol_mult_req
+        # ── Signal 3: Volume spike ────────────────────────────
+        self._update_vol_window(symbol, volume)
+        vol_ratio = self._vol_spike_mult(symbol, volume)
+        vol_ok    = vol_ratio >= vol_mult_req
 
-        # 4. RSI confirmation
+        # ── Signal 4: RSI confirmation ────────────────────────
         if direction == "long":
-            rsi_ok = rsi < rsi_ob      # not overbought
+            rsi_ok = rsi < rsi_ob
         else:
-            rsi_ok = rsi > rsi_os      # not oversold
+            rsi_ok = rsi > rsi_os
 
-        # 5. Price action (higher highs + higher lows for long, opposite for short)
-        if direction == "long":
-            pa_ok = bool(row["hh"]) and bool(row["hl"])
+        # ── Signal 5: Price action ────────────────────────────
+        # Higher highs + higher lows = bullish structure
+        # Lower highs + lower lows   = bearish structure
+        if high is not None and low is not None and prev_high is not None and prev_low is not None:
+            if direction == "long":
+                pa_ok = (high > prev_high) and (low > prev_low)
+            else:
+                pa_ok = (high < prev_high) and (low < prev_low)
         else:
-            pa_ok = bool(row["lh"]) and bool(row["ll"])
+            pa_ok = False
 
         # ── Score ─────────────────────────────────────────────
         score = sum([ema_ok, vwap_ok, vol_ok, rsi_ok, pa_ok])
 
         # ── Calculate stops ───────────────────────────────────
-        stop_mult = float(self._get_threshold("ATR_STOP_MULT", config.ATR_STOP_MULT))
-        tp_mult   = float(self._get_threshold("ATR_TP_MULT",   config.ATR_TP_MULT))
-
         if direction == "long":
             stop_loss   = price - (atr * stop_mult)
             take_profit = price + (atr * tp_mult)
