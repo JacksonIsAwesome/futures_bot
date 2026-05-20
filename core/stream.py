@@ -396,8 +396,10 @@ class PriceStream:
             log.info("[STREAM] Connected to Alpaca stream")
 
         elif t == "success":
-            log.info(f"[STREAM] Success message: {msg}")  # temp debug line
-            if msg.get("msg") == "authenticated":
+            log.info(f"[STREAM] Success message: {msg}")  # temp debug
+            if msg.get("msg") == "connected":
+                pass  # just acknowledge, wait for auth response
+            elif msg.get("msg") == "authenticated":
                 log.info("[STREAM] Authenticated ✓ — subscribing")
                 ws.send(json.dumps({
                     "action":  "subscribe",
