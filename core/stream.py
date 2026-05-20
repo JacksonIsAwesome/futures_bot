@@ -409,7 +409,12 @@ class PriceStream:
                 self._ready.set()
 
         elif t == "error":
-            log.error(f"[STREAM] Auth/subscribe error: {msg}")
+            code = msg.get("code")
+            log.error(f"[STREAM] Error: {msg}")
+            if code == 406:
+                log.info("[STREAM] Connection limit — waiting 10s for old connection to clear...")
+                time.sleep(10)
+                ws.close()
 
         elif t == "t":
             # trade tick
