@@ -404,7 +404,7 @@ class PriceStream:
                     "quotes":  [],
                     "bars":    [],
                 }))
-            elif msg.get("msg") == "subscribed":
+            elif msg.get("msg") == "subscribed" or msg.get("trades"):
                 log.info(f"[STREAM] Subscribed to {self.symbols} ✓")
                 self._ready.set()
 
