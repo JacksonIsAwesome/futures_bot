@@ -10,10 +10,11 @@ Rules:
   - Max 20% of capital per trade
   - Never trades the same symbol twice simultaneously
   - Validates stop/TP math before entry
-  - Moves stop to breakeven once trade is profitable enough
+  - ATR-based breakeven: moves stop to entry after BREAKEVEN_ATR_MULT * ATR profit
   - Trails stop after breakeven to lock in gains
-  - Same-direction loss cooldown — after a loss, waits before
-    entering the same direction again on the same symbol
+  - Same-direction loss cooldown after stop loss
+  - Direction flip detection: if signal flips while in a trade, flags it
+    so main.py can exit the trade and wait for reconfirmation
 """
 
 import time
@@ -28,8 +29,6 @@ import config
 
 log = logging.getLogger(__name__)
 
-# After a losing trade, wait this long before re-entering
-# the same direction on the same symbol (in seconds)
 LOSS_DIRECTION_COOLDOWN = 20 * 60   # 20 minutes
 
 
@@ -41,6 +40,10 @@ class RiskManager:
 
         # tracks (symbol, direction) -> timestamp of last loss
         self._last_loss_direction = {}
+
+        # tracks symbols that just had a direction flip exit
+        # so we know to wait for reconfirmation before entering
+        self._flip_exit_time = {}   # symbol -> timestamp of flip exit
 
         log.info(f"[RISK] Risk manager initialized | Capital: ${starting_capital:,.2f}")
 
@@ -67,7 +70,56 @@ class RiskManager:
         self.killed = False
         self.kill_reason = None
         self._last_loss_direction = {}
+        self._flip_exit_time = {}
         log.info("[RISK] Daily reset ✓")
+
+    # ── Direction flip tracking ───────────────────────────────
+
+    def record_flip_exit(self, symbol: str):
+        """
+        Call this when a trade is exited due to a direction flip signal.
+        Starts a reconfirmation wait so we don't immediately re-enter.
+        The next signal scan will check this before allowing a new entry.
+        """
+        self._flip_exit_time[symbol] = time.time()
+        log.info(
+            f"[RISK] ↩️  FLIP EXIT {symbol} — "
+            f"waiting for reconfirmation before new entry"
+        )
+
+    def flip_reconfirmed(self, symbol: str) -> bool:
+        """
+        Returns True if enough time has passed since a flip exit
+        that we can now enter in the new direction.
+        Requires the signal to have fired at least once more (60s+)
+        after the flip exit before we trust it.
+        """
+        last_flip = self._flip_exit_time.get(symbol, 0)
+        if last_flip == 0:
+            return True   # no flip exit recorded — always ok
+        elapsed = time.time() - last_flip
+        # wait 90 seconds — enough for at least one full slow loop cycle
+        # to confirm the signal is still pointing the same direction
+        if elapsed >= 90:
+            del self._flip_exit_time[symbol]   # clear it once reconfirmed
+            return True
+        secs_left = int(90 - elapsed)
+        log.debug(
+            f"[RISK] {symbol} waiting for flip reconfirmation — "
+            f"{secs_left}s remaining"
+        )
+        return False
+
+    def should_flip_exit(self, symbol: str, new_direction: str) -> bool:
+        """
+        Returns True if there's an open trade in the opposite direction
+        of new_direction, meaning we should exit before considering entry.
+        Called from main.py slow loop before can_trade check.
+        """
+        existing = get_open_trade_for_symbol(symbol)
+        if existing is None:
+            return False
+        return existing["side"] != new_direction
 
     # ── Trade validation ──────────────────────────────────────
 
@@ -95,13 +147,17 @@ class RiskManager:
                 f"blocked for {mins_left}m after last loss"
             )
 
-        # 4. Max open trades
+        # 4. Flip reconfirmation — must wait after a direction flip exit
+        if not self.flip_reconfirmed(symbol):
+            return False, f"Waiting for flip reconfirmation on {symbol}"
+
+        # 5. Max open trades
         open_trades = get_open_trades()
         max_trades  = int(get_config_override("MAX_OPEN_TRADES", config.MAX_OPEN_TRADES))
         if len(open_trades) >= max_trades:
             return False, f"Max open trades reached ({max_trades})"
 
-        # 5. No duplicate symbol positions
+        # 6. No duplicate symbol positions
         existing = get_open_trade_for_symbol(symbol)
         if existing:
             if existing["side"] != signal.direction:
@@ -111,7 +167,7 @@ class RiskManager:
                 )
             return False, f"Already have open {symbol} position"
 
-        # 6. Validate stop/TP math
+        # 7. Validate stop/TP math
         if signal.direction == "long":
             if signal.stop_loss >= signal.price:
                 return False, "Stop loss must be below entry for longs"
@@ -123,10 +179,7 @@ class RiskManager:
             if signal.take_profit >= signal.price:
                 return False, "Take profit must be below entry for shorts"
 
-        # 7. Minimum R:R ratio
-        # Lowered from 1.5 to 1.2 — live tick ATR is smaller than bar ATR
-        # so stops/TPs are tighter, making 1.5 too strict for live data.
-        # 1.2:1 still ensures positive expectancy while allowing more trades.
+        # 8. Minimum R:R ratio (1.2:1 minimum)
         if signal.direction == "long":
             risk   = signal.price - signal.stop_loss
             reward = signal.take_profit - signal.price
@@ -182,13 +235,26 @@ class RiskManager:
 
     def manage_open_trades(self, current_prices: dict) -> list:
         """
-        Called every 5-second scan cycle.
-        Returns list of (trade_id, action, price, reason, side) to execute.
+        Called every 5-second fast loop.
+        Checks stops, TPs, ATR-based breakeven, and trailing stop.
+        Returns list of (trade_id, action, price, reason, side).
+
+        Breakeven trigger:
+          Uses BREAKEVEN_ATR_MULT * estimated_ATR instead of a fixed
+          dollar amount. This scales correctly per symbol — QQQ and NVDA
+          have different volatility so they need different triggers.
+          estimated_ATR is reverse-engineered from the trade's TP distance.
         """
         actions     = []
         open_trades = get_open_trades()
 
+        # trail at 0.5x ATR after breakeven
         TRAIL_STEP = 0.5
+
+        # ATR multiplier for breakeven trigger — configurable
+        be_atr_mult = float(get_config_override(
+            "BREAKEVEN_ATR_MULT", config.BREAKEVEN_ATR_MULT
+        ))
 
         for trade in open_trades:
             symbol = trade["symbol"]
@@ -197,19 +263,24 @@ class RiskManager:
             if price is None:
                 continue
 
-            trade_id   = trade["id"]
-            side       = trade["side"]
-            entry      = float(trade["entry_price"])
-            stop       = float(trade["stop_loss"])
-            tp         = float(trade["take_profit"])
-            be_set     = trade["breakeven_set"]
-            be_trigger = config.BREAKEVEN_TRIGGER
+            trade_id = trade["id"]
+            side     = trade["side"]
+            entry    = float(trade["entry_price"])
+            stop     = float(trade["stop_loss"])
+            tp       = float(trade["take_profit"])
+            be_set   = trade["breakeven_set"]
 
-            tp_mult = get_config_override("ATR_TP_MULT", config.ATR_TP_MULT)
+            # estimate ATR from the TP distance
+            # TP was set at entry ± ATR * ATR_TP_MULT so:
+            # ATR ≈ abs(tp - entry) / ATR_TP_MULT
+            tp_mult = float(get_config_override("ATR_TP_MULT", config.ATR_TP_MULT))
             if side == "long":
                 estimated_atr = abs(tp - entry) / tp_mult
             else:
                 estimated_atr = abs(entry - tp) / tp_mult
+
+            # ATR-based breakeven trigger — scales per symbol
+            be_trigger    = estimated_atr * be_atr_mult
             trail_distance = estimated_atr * TRAIL_STEP
 
             # ── Stop loss hit ─────────────────────────────────
@@ -234,20 +305,24 @@ class RiskManager:
                 log.info(f"[RISK] 🟢 TP {symbol} @ {price:.2f} (tp={tp:.2f})")
                 continue
 
-            # ── Move to breakeven ─────────────────────────────
+            # ── ATR-based breakeven ───────────────────────────
+            # Move stop to entry once price moves BREAKEVEN_ATR_MULT * ATR
+            # in our favor. Scales automatically per symbol.
             if not be_set:
                 if side == "long" and price >= entry + be_trigger:
                     set_breakeven(trade_id, entry)
                     log.info(
                         f"[RISK] ↗️  BREAKEVEN {symbol} — "
-                        f"stop moved to entry {entry:.2f}"
+                        f"stop moved to entry {entry:.2f} "
+                        f"(trigger={be_trigger:.2f} = {be_atr_mult}x ATR)"
                     )
 
-                if side == "short" and price <= entry - be_trigger:
+                elif side == "short" and price <= entry - be_trigger:
                     set_breakeven(trade_id, entry)
                     log.info(
                         f"[RISK] ↗️  BREAKEVEN {symbol} — "
-                        f"stop moved to entry {entry:.2f}"
+                        f"stop moved to entry {entry:.2f} "
+                        f"(trigger={be_trigger:.2f} = {be_atr_mult}x ATR)"
                     )
 
             # ── Trailing stop (only after breakeven is set) ───
