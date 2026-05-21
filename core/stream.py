@@ -5,13 +5,18 @@ Connects to Alpaca's free IEX WebSocket feed and maintains a live
 price cache that the strategy reads from instead of polling bars.
 
 On startup:
-  - Fetches historical bars to seed EMA, VWAP, ATR calculations
+  - Fetches historical 5-minute bars to seed EMA, VWAP, ATR calculations
+    (5-min bars give better ATR than 1-min — captures real intraday volatility)
   - Connects to WebSocket and subscribes to trades for all symbols
   - Updates price cache on every tick
 
+ATR is seeded from bars and NOT updated from ticks — tick-to-tick price
+differences are too small to give a meaningful ATR. ATR stays fixed at
+the seeded value until the next daily restart when new bars are fetched.
+
 The strategy reads from stream.get_price(symbol) instead of data.py.
-If the stream is down or stale, falls back to the last known price
-with a staleness flag so the bot can skip the symbol.
+If the stream is down or stale, the cache still returns seeded data
+with stale=True so the bot can skip new entries safely.
 """
 
 import json
@@ -33,8 +38,9 @@ log = logging.getLogger(__name__)
 WS_URL          = "wss://stream.data.alpaca.markets/v2/iex"
 BARS_URL        = "https://data.alpaca.markets/v2/stocks/{symbol}/bars"
 STALE_SECONDS   = 120
-RECONNECT_DELAY = 10   # increased from 5 to give Alpaca time to release connection
-BAR_LIMIT       = 50
+RECONNECT_DELAY = 10
+BAR_LIMIT       = 100   # more bars = better ATR calculation
+BAR_TIMEFRAME   = "5Min"  # 5-min bars capture real intraday volatility
 
 # ── Indicator math ────────────────────────────────────────────────────────────
 
@@ -49,6 +55,11 @@ def _ema(prices: list, period: int) -> float:
 
 
 def _atr(highs: list, lows: list, closes: list, period: int = 14) -> float:
+    """
+    Calculate ATR from OHLC bar data.
+    This is the TRUE ATR using bar high/low ranges — much more accurate
+    than tick-to-tick differences. Called once on startup from bar data.
+    """
     if len(closes) < 2:
         return abs(highs[-1] - lows[-1]) if highs and lows else 0.5
     trs = []
@@ -101,7 +112,7 @@ class SymbolCache:
 
         self.ema9       = None
         self.ema21      = None
-        self.atr        = None
+        self.atr        = None   # seeded from bars, NOT updated from ticks
         self.rsi        = None
         self.vwap       = None
         self.high       = None
@@ -109,15 +120,20 @@ class SymbolCache:
         self.prev_high  = None
         self.prev_low   = None
 
-        self._closes         = deque(maxlen=50)
-        self._highs          = deque(maxlen=50)
-        self._lows           = deque(maxlen=50)
+        self._closes         = deque(maxlen=100)
+        self._highs          = deque(maxlen=100)
+        self._lows           = deque(maxlen=100)
         self._intra_prices   = deque(maxlen=500)
         self._intra_volumes  = deque(maxlen=500)
 
         self._lock = threading.Lock()
 
     def seed_from_bars(self, bars: list):
+        """
+        Seed all indicators from historical bar data on startup.
+        bars: list of dicts with keys: c, h, l, o, v, t
+        Uses 5-min bars for better ATR calculation.
+        """
         if not bars:
             log.warning(f"[STREAM] No bars to seed {self.symbol}")
             return
@@ -132,18 +148,25 @@ class SymbolCache:
             self._highs.extend(highs)
             self._lows.extend(lows)
 
-            self.ema9      = _ema(closes, 9)
-            self.ema21     = _ema(closes, 21)
-            self.atr       = _atr(highs, lows, closes)
-            self.rsi       = _rsi(closes)
-            self.vwap      = _vwap(closes, vols)
-            self.price     = closes[-1]
+            self.ema9  = _ema(closes, 9)
+            self.ema21 = _ema(closes, 21)
+
+            # ATR from true OHLC bar data — much more accurate than ticks
+            # This is the key fix: using bar highs/lows gives real ATR,
+            # not the tiny tick-to-tick differences
+            self.atr = _atr(highs, lows, closes)
+
+            self.rsi   = _rsi(closes)
+            self.vwap  = _vwap(closes, vols)
+            self.price = closes[-1]
+
+            # use last 20 bars for high/low context
             self.high      = max(highs[-20:])
             self.low       = min(lows[-20:])
             self.prev_high = max(highs[-21:-1]) if len(highs) > 20 else self.high
             self.prev_low  = min(lows[-21:-1])  if len(lows)  > 20 else self.low
 
-            # seed intraday VWAP buffers with today's bars only
+            # seed intraday VWAP with today's bars only
             today = datetime.utcnow().date()
             for b in bars:
                 bar_time = b.get("t", "")
@@ -151,7 +174,7 @@ class SymbolCache:
                     self._intra_prices.append(b["c"])
                     self._intra_volumes.append(b["v"])
 
-            # mark as freshly seeded so staleness check passes
+            # mark as freshly seeded so staleness check passes immediately
             self.updated_at = datetime.utcnow()
 
         log.info(
@@ -161,35 +184,50 @@ class SymbolCache:
         )
 
     def on_tick(self, price: float, volume: int = 0):
+        """
+        Update price and recalculate tick-based indicators on every trade.
+        ATR is intentionally NOT updated here — it stays at the seeded
+        value from bars which is far more accurate for stop/TP sizing.
+        """
         with self._lock:
             self.price      = price
             self.volume     = volume
             self.updated_at = datetime.utcnow()
 
+            # update close buffer for EMA/RSI
             self._closes.append(price)
             closes = list(self._closes)
 
+            # update intraday VWAP
             self._intra_prices.append(price)
             self._intra_volumes.append(volume if volume > 0 else 1)
 
+            # recalculate EMAs on every tick
             if len(closes) >= 9:
                 self.ema9 = _ema(closes, 9)
             if len(closes) >= 21:
                 self.ema21 = _ema(closes, 21)
+
+            # RSI updates every tick
             if len(closes) >= 15:
                 self.rsi = _rsi(closes)
 
+            # VWAP from intraday data
             ip = list(self._intra_prices)
             iv = list(self._intra_volumes)
             if ip:
                 self.vwap = _vwap(ip, iv)
 
+            # track intraday high/low
             if self.high is None or price > self.high:
                 self.high = price
             if self.low is None or price < self.low:
                 self.low = price
 
+            # NOTE: ATR is NOT updated here — seeded value from bars is used
+
     def to_dict(self) -> dict:
+        """Return snapshot of current state for the strategy to read."""
         with self._lock:
             stale = (
                 self.updated_at is None or
@@ -221,12 +259,12 @@ class PriceStream:
     """
 
     def __init__(self, symbols: list):
-        self.symbols  = [s.upper() for s in symbols]
-        self._cache   = {s: SymbolCache(s) for s in self.symbols}
-        self._ws      = None
-        self._running = False
-        self._thread  = None
-        self._ready   = threading.Event()
+        self.symbols     = [s.upper() for s in symbols]
+        self._cache      = {s: SymbolCache(s) for s in self.symbols}
+        self._ws         = None
+        self._running    = False
+        self._thread     = None
+        self._ready      = threading.Event()
         self._subscribed = False
 
     # ── Public API ────────────────────────────────────────────
@@ -238,7 +276,6 @@ class PriceStream:
         self._thread  = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()
 
-        # wait up to 20s for connection — longer to handle 406 retry
         if self._ready.wait(timeout=20):
             log.info("[STREAM] ✓ WebSocket live and subscribed")
         else:
@@ -274,8 +311,13 @@ class PriceStream:
                 log.error(f"[STREAM] Failed to seed {symbol}: {e}")
 
     def _fetch_bars(self, symbol: str) -> list:
+        """
+        Fetch recent bars from Alpaca REST API.
+        Uses 5-minute bars for better ATR — 1-min bars give tiny
+        high/low ranges that underestimate real volatility.
+        """
         end   = datetime.utcnow()
-        start = end - timedelta(hours=8)
+        start = end - timedelta(hours=10)  # enough to get BAR_LIMIT 5-min bars
 
         resp = requests.get(
             BARS_URL.format(symbol=symbol),
@@ -284,7 +326,7 @@ class PriceStream:
                 "APCA-API-SECRET-KEY": config.ALPACA_SECRET_KEY,
             },
             params={
-                "timeframe": "1Min",
+                "timeframe": BAR_TIMEFRAME,
                 "start":     start.strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "end":       end.strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "limit":     BAR_LIMIT,
@@ -294,7 +336,7 @@ class PriceStream:
         )
         resp.raise_for_status()
         bars = resp.json().get("bars", [])
-        log.info(f"[STREAM] Fetched {len(bars)} bars for {symbol}")
+        log.info(f"[STREAM] Fetched {len(bars)} {BAR_TIMEFRAME} bars for {symbol}")
         return bars
 
     # ── WebSocket loop ────────────────────────────────────────
@@ -343,12 +385,9 @@ class PriceStream:
     def _handle_message(self, ws, msg: dict):
         t = msg.get("T")
 
-        # ── connection confirmed ──────────────────────────────
         if t == "success" and msg.get("msg") == "connected":
             log.info("[STREAM] Connected to Alpaca stream")
-            # auth is sent in _on_open, nothing to do here
 
-        # ── authenticated ─────────────────────────────────────
         elif t == "success" and msg.get("msg") == "authenticated":
             log.info("[STREAM] Authenticated ✓ — subscribing")
             ws.send(json.dumps({
@@ -358,27 +397,20 @@ class PriceStream:
                 "bars":   [],
             }))
 
-        # ── subscription confirmed ────────────────────────────
-        # Alpaca sends back a success message with the subscribed
-        # trades list, not a separate "subscribed" msg field
         elif t == "subscription":
             trades = msg.get("trades", [])
             log.info(f"[STREAM] Subscribed ✓ — receiving trades for {trades}")
             self._subscribed = True
             self._ready.set()
 
-        # ── error ─────────────────────────────────────────────
         elif t == "error":
             code = msg.get("code")
             err  = msg.get("msg", "unknown")
             log.error(f"[STREAM] Error {code}: {err}")
             if code == 406:
-                # connection limit — old connection still open on Alpaca's side
-                # close this one and wait for reconnect loop to retry
                 log.warning("[STREAM] Connection limit (406) — closing and retrying in 10s")
                 ws.close()
 
-        # ── trade tick ────────────────────────────────────────
         elif t == "t":
             symbol = msg.get("S", "").upper()
             price  = msg.get("p")
@@ -386,7 +418,6 @@ class PriceStream:
             if symbol in self._cache and price:
                 self._cache[symbol].on_tick(float(price), int(size))
 
-        # ── anything else — log it so we can see what Alpaca sends ──
         else:
             if t not in (None,):
                 log.debug(f"[STREAM] Unhandled message type '{t}': {msg}")
