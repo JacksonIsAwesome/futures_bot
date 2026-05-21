@@ -40,7 +40,6 @@ class RiskManager:
         self.kill_reason = None
 
         # tracks (symbol, direction) -> timestamp of last loss
-        # so we don't immediately re-enter a losing direction
         self._last_loss_direction = {}
 
         log.info(f"[RISK] Risk manager initialized | Capital: ${starting_capital:,.2f}")
@@ -48,10 +47,6 @@ class RiskManager:
     # ── Daily kill switch ─────────────────────────────────────
 
     def check_daily_limits(self) -> bool:
-        """
-        Returns True if trading is allowed.
-        Returns False and sets killed=True if daily loss limit hit.
-        """
         if self.killed:
             return False
 
@@ -69,7 +64,6 @@ class RiskManager:
         return True
 
     def reset_daily(self):
-        """Call at start of each new trading day."""
         self.killed = False
         self.kill_reason = None
         self._last_loss_direction = {}
@@ -91,7 +85,6 @@ class RiskManager:
             return False, "No direction in signal"
 
         # 3. Same-direction loss cooldown
-        # After a losing trade, wait before re-entering same direction
         key = (symbol, signal.direction)
         last_loss = self._last_loss_direction.get(key, 0)
         elapsed = time.time() - last_loss
@@ -130,7 +123,10 @@ class RiskManager:
             if signal.take_profit >= signal.price:
                 return False, "Take profit must be below entry for shorts"
 
-        # 7. Minimum R:R ratio (1.5:1 minimum)
+        # 7. Minimum R:R ratio
+        # Lowered from 1.5 to 1.2 — live tick ATR is smaller than bar ATR
+        # so stops/TPs are tighter, making 1.5 too strict for live data.
+        # 1.2:1 still ensures positive expectancy while allowing more trades.
         if signal.direction == "long":
             risk   = signal.price - signal.stop_loss
             reward = signal.take_profit - signal.price
@@ -138,16 +134,16 @@ class RiskManager:
             risk   = signal.stop_loss - signal.price
             reward = signal.price - signal.take_profit
 
-        if risk <= 0 or (reward / risk) < 1.5:
-            return False, f"R:R too low: {reward/risk:.2f}:1 (need 1.5:1 min)"
+        if risk <= 0:
+            return False, "Risk is zero or negative"
+
+        rr = reward / risk
+        if rr < 1.2:
+            return False, f"R:R too low: {rr:.2f}:1 (need 1.2:1 min)"
 
         return True, None
 
     def record_loss(self, symbol, direction):
-        """
-        Call this after a losing trade closes.
-        Starts the same-direction cooldown for this symbol.
-        """
         key = (symbol, direction)
         self._last_loss_direction[key] = time.time()
         log.info(
@@ -156,13 +152,8 @@ class RiskManager:
         )
 
     def calculate_position_size(self, symbol, signal) -> float:
-        """
-        Calculate how many shares/contracts to buy.
-        Sizes so max loss on this trade = 2% of capital.
-        Never exceeds MAX_POSITION_PCT of capital.
-        """
         max_pct        = float(get_config_override("MAX_POSITION_PCT", config.MAX_POSITION_PCT))
-        risk_pct       = 0.02   # risk 2% of capital per trade
+        risk_pct       = 0.02
 
         price          = signal.price
         stop           = signal.stop_loss
@@ -192,19 +183,12 @@ class RiskManager:
     def manage_open_trades(self, current_prices: dict) -> list:
         """
         Called every 5-second scan cycle.
-        Checks open trades for:
-          - Stop loss hit
-          - Take profit hit
-          - Breakeven trigger (move stop to entry)
-          - Trailing stop (move stop up/down as price moves in our favor)
         Returns list of (trade_id, action, price, reason, side) to execute.
         """
         actions     = []
         open_trades = get_open_trades()
 
-        # trail stop by this fraction of ATR after breakeven
-        # keeps locking in gains as price moves in our favor
-        TRAIL_STEP = 0.5   # trail stop every 0.5 ATR of movement
+        TRAIL_STEP = 0.5
 
         for trade in open_trades:
             symbol = trade["symbol"]
@@ -221,8 +205,6 @@ class RiskManager:
             be_set     = trade["breakeven_set"]
             be_trigger = config.BREAKEVEN_TRIGGER
 
-            # estimate ATR from the TP/entry distance
-            # TP was set at entry + ATR * TP_MULT so ATR ≈ (tp - entry) / TP_MULT
             tp_mult = get_config_override("ATR_TP_MULT", config.ATR_TP_MULT)
             if side == "long":
                 estimated_atr = abs(tp - entry) / tp_mult
@@ -269,13 +251,9 @@ class RiskManager:
                     )
 
             # ── Trailing stop (only after breakeven is set) ───
-            # Move stop up (long) or down (short) as price moves
-            # in our favor, always keeping trail_distance behind price
             elif be_set:
                 if side == "long":
-                    # new stop trails price by trail_distance
                     new_stop = round(price - trail_distance, 4)
-                    # only move stop UP, never down
                     if new_stop > stop:
                         update_stop_loss(trade_id, new_stop)
                         log.info(
@@ -285,9 +263,7 @@ class RiskManager:
                         )
 
                 elif side == "short":
-                    # new stop trails price by trail_distance
                     new_stop = round(price + trail_distance, 4)
-                    # only move stop DOWN, never up
                     if new_stop < stop:
                         update_stop_loss(trade_id, new_stop)
                         log.info(
