@@ -201,6 +201,29 @@ class CandleBuilder:
             return 1.0   # not enough candles yet
         return _atr(h, l, c, self.atr_period)
 
+    def get_candles(self, n: int = 10) -> list:
+        """
+        Return the last N completed candles as a list of dicts.
+        Each dict has keys: high, low, close.
+        Used by the strategy for price action signal evaluation.
+        Returns empty list if fewer than n candles have completed.
+        """
+        with self._lock:
+            highs  = list(self._candle_highs)
+            lows   = list(self._candle_lows)
+            closes = list(self._candle_closes)
+
+        count = min(len(highs), len(lows), len(closes))
+        if count == 0:
+            return []
+
+        candles = [
+            {"high": highs[i], "low": lows[i], "close": closes[i]}
+            for i in range(count)
+        ]
+        # return the most recent n candles
+        return candles[-n:] if len(candles) >= n else candles
+
     def candle_count(self) -> int:
         with self._lock:
             return len(self._candle_closes)
@@ -353,6 +376,14 @@ class SymbolCache:
                 f"({self._candles.candle_count()} candles)"
             )
 
+    def get_candles(self, n: int = 10) -> list:
+        """
+        Return the last N completed 1-minute candles.
+        Each candle is a dict with keys: high, low, close.
+        Delegates to the candle builder.
+        """
+        return self._candles.get_candles(n)
+
     def to_dict(self) -> dict:
         """Return a snapshot of current state for the strategy to read."""
         with self._lock:
@@ -436,6 +467,19 @@ class PriceStream:
     def is_stale(self, symbol: str) -> bool:
         data = self.get_price(symbol)
         return data is None or data["stale"]
+
+    def get_candles(self, symbol: str, n: int = 10) -> list:
+        """
+        Return the last N completed 1-minute candles for a symbol.
+        Each candle is a dict with keys: high, low, close.
+        Used by the strategy for price action signal evaluation.
+        Returns empty list if symbol not tracked or no candles yet.
+        """
+        symbol = symbol.upper()
+        cache  = self._cache.get(symbol)
+        if cache is None:
+            return []
+        return cache.get_candles(n)
 
     # ── Bar seeding ───────────────────────────────────────────
 
