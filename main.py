@@ -6,8 +6,8 @@ Coordinates stream → strategy → risk → execution in a clean loop.
 
 Architecture:
   - STREAM: WebSocket real-time price feed (replaces bar polling)
-  - FAST loop (5s): price check, stop/TP management
-  - SLOW loop (60s): signal evaluation from live stream cache
+  - FAST loop (5s): price check, stop/TP/breakeven/trail management
+  - SLOW loop (60s): signal evaluation, direction flip detection
   - DAILY loop (5pm ET): meta brain review, position close, daily reset
 """
 
@@ -21,7 +21,7 @@ from config import (
     SYMBOLS, STARTING_CAPITAL, SCAN_INTERVAL_SEC,
     MARKET_OPEN, MARKET_CLOSE, META_REVIEW_HOUR
 )
-from core.database      import init_db, get_open_trades, upsert_daily_summary
+from core.database      import init_db, get_open_trades, get_open_trade_for_symbol, upsert_daily_summary
 from core.data          import DataFetcher
 from core.stream        import PriceStream
 from core.execution     import ExecutionEngine
@@ -29,7 +29,6 @@ from risk.manager       import RiskManager
 from strategies.ema_vwap import EMAVWAPStrategy
 from meta.brain         import MetaBrain
 
-# ── Logging setup ─────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -48,7 +47,6 @@ class AlphaBot:
 
         init_db()
 
-        # data fetcher kept for execution engine (order placement)
         self.data      = DataFetcher()
         self.stream    = PriceStream(symbols=SYMBOLS)
         self.execution = ExecutionEngine(self.data)
@@ -56,8 +54,8 @@ class AlphaBot:
         self.strategy  = EMAVWAPStrategy()
         self.meta      = MetaBrain()
 
-        self._last_slow  = {}   # symbol -> last slow-loop timestamp
-        self._last_exit  = {}   # symbol -> timestamp of last exit (cooldown)
+        self._last_slow  = {}
+        self._last_exit  = {}
         self._scan_count = 0
         self.COOLDOWN_SEC = 30 * 60
         self._last_date  = date.today()
@@ -69,7 +67,6 @@ class AlphaBot:
         log.info("[STRAT] EMA/VWAP strategy loaded ✓")
         log.info("[META] Meta brain initialized ✓")
 
-        # start stream last — seeds bars then opens WebSocket
         self.stream.start()
 
         log.info("[BOOT] All modules initialized ✓")
@@ -107,8 +104,13 @@ class AlphaBot:
     def _run_slow_loop(self, symbol: str):
         """
         Runs every 60 seconds per symbol.
-        Reads live cache from stream, evaluates signal, enters trade if ready.
-        No more bar fetching — stream handles all indicator updates.
+
+        Flow:
+          1. Get live cache and candles from stream
+          2. Evaluate signal via strategy
+          3. Check for direction flip — if we're long and signal says short
+             (or vice versa), exit the current trade and wait for reconfirmation
+          4. If no flip and no cooldown, check risk rules and enter trade
         """
         cache = self.stream.get_price(symbol)
 
@@ -123,37 +125,59 @@ class AlphaBot:
                 log.warning(
                     f"[DATA] {symbol} data is stale — "
                     f"last tick was {age:.1f}s ago "
-                    f"(max allowed: {int(120)}s). Skipping."
+                    f"(max allowed: 120s). Skipping."
                 )
             else:
                 log.warning(f"[DATA] {symbol} data is stale — no ticks yet. Skipping.")
             return
 
         candles = self.stream.get_candles(symbol, n=10)
-        signal = self.strategy.evaluate(symbol, cache, candles)
+        signal  = self.strategy.evaluate(symbol, cache, candles)
         if signal is None:
             return
 
         if signal.direction is None:
             return
 
-        # price from stream is already live — no override needed
-        # stream.get_price() returns the latest tick price in real time
+        # ── Direction flip detection ──────────────────────────
+        # If we're in a trade and the signal flips direction,
+        # exit the current trade and wait one full scan cycle (90s)
+        # for reconfirmation before entering the new direction.
+        # This prevents whipsawing in and out on noisy signals.
+        if self.risk.should_flip_exit(symbol, signal.direction):
+            existing = get_open_trade_for_symbol(symbol)
+            if existing:
+                log.info(
+                    f"[MAIN] 🔄 DIRECTION FLIP {symbol} — "
+                    f"exiting {existing['side']} "
+                    f"(signal flipped to {signal.direction})"
+                )
+                self.execution.exit_trade(
+                    existing["id"],
+                    symbol,
+                    cache["price"],
+                    "direction_flip"
+                )
+                self.risk.record_flip_exit(symbol)
+                self._last_exit[symbol] = time.time()
+            # always return here — wait for reconfirmation on next scan
+            return
 
-        # 30-min cooldown per symbol after exit
+        # ── Normal cooldown check ─────────────────────────────
         last_exit = self._last_exit.get(symbol, 0)
         if time.time() - last_exit < self.COOLDOWN_SEC:
             mins_left = int((self.COOLDOWN_SEC - (time.time() - last_exit)) / 60)
             log.debug(f"[MAIN] {symbol} in cooldown — {mins_left}m remaining")
             return
 
-        # check risk rules
+        # ── Risk validation ───────────────────────────────────
+        # Includes flip reconfirmation check inside can_trade
         ok, reason = self.risk.can_trade(symbol, signal)
         if not ok:
             log.debug(f"[MAIN] {symbol} blocked: {reason}")
             return
 
-        # calculate position size
+        # ── Position sizing and entry ─────────────────────────
         qty = self.risk.calculate_position_size(symbol, signal)
         if qty <= 0:
             log.warning(f"[MAIN] {symbol} position size = 0, skipping")
@@ -161,18 +185,18 @@ class AlphaBot:
 
         self.execution.enter_trade(signal, qty)
 
-    # ── Fast loop — stop/TP management ───────────────────────
+    # ── Fast loop — stop/TP/breakeven/trail management ────────
 
     def _run_fast_loop(self):
         """
         Runs every 5 seconds.
         Reads live prices from stream cache for open position management.
+        Handles stops, TPs, ATR-based breakeven, and trailing stops.
         """
         open_trades = get_open_trades()
         if not open_trades:
             return
 
-        # get current prices from stream cache (real-time, no API call)
         current_prices = {}
         for trade in open_trades:
             sym   = trade["symbol"]
@@ -183,7 +207,6 @@ class AlphaBot:
         if not current_prices:
             return
 
-        # let risk manager check stops and breakeven
         actions = self.risk.manage_open_trades(current_prices)
 
         for trade_id, action, price, reason, side in actions:
@@ -216,16 +239,16 @@ class AlphaBot:
         if self._is_market_open():
             self._run_fast_loop()
 
-        # ── Slow loop (every 60s per symbol) ──────────────────
-        now = time.time()
-        for symbol in SYMBOLS:
-            last = self._last_slow.get(symbol, 0)
-            if now - last >= 60:
-                if self._is_market_open():
+        # ── Slow loop (every 60s per symbol, market open only) ─
+        if self._is_market_open():
+            now = time.time()
+            for symbol in SYMBOLS:
+                last = self._last_slow.get(symbol, 0)
+                if now - last >= 60:
                     self._run_slow_loop(symbol)
-                self._last_slow[symbol] = now
+                    self._last_slow[symbol] = now
 
-        # ── Manual meta brain trigger check ───────────────────
+        # ── Manual meta brain trigger ─────────────────────────
         if self._scan_count % 12 == 0:
             self._check_meta_flag()
 
