@@ -1,9 +1,9 @@
 """
 core/execution.py — Trade Execution via Alpaca Paper API
 
-Places market orders for SPY/QQQ with simulated leverage.
+Places market orders for QQQ/NVDA with simulated leverage.
 The leverage multiplier makes paper P&L behave like futures —
-if SPY moves 1%, with 10x leverage the bot treats it as 10%.
+if QQQ moves 1%, with 10x leverage the bot treats it as 10%.
 
 CRITICAL SAFETY: verifies DB side before every close.
 Phantom short/long mismatches are impossible.
@@ -41,22 +41,31 @@ class ExecutionEngine:
         Open a new position via Alpaca paper trading.
         qty = number of shares (fractional supported).
         Returns trade_id on success, None on failure.
-        """
-        try:
-            side = "buy" if signal.direction == "long" else "sell"
 
+        Error handling:
+        - HTTPError: logs full Alpaca response body so we can see the exact reason
+        - Other exceptions: logs the raw exception
+        """
+        side = "buy" if signal.direction == "long" else "sell"
+
+        order_payload = {
+            "symbol":        signal.symbol,
+            "qty":           str(round(qty, 2)),
+            "side":          side,
+            "type":          "market",
+            "time_in_force": "day"
+        }
+
+        try:
             r = self._session.post(
                 f"{ALPACA_TRADE_URL}/orders",
-                json={
-                    "symbol":        signal.symbol,
-                    "qty":           str(round(qty, 2)),
-                    "side":          side,
-                    "type":          "market",
-                    "time_in_force": "day"
-                },
+                json=order_payload,
                 timeout=10
             )
+
+            # raise immediately so we catch the HTTP error with full context
             r.raise_for_status()
+
             data       = r.json()
             fill_price = float(data.get("filled_avg_price") or signal.price)
 
@@ -83,6 +92,19 @@ class ExecutionEngine:
             )
             return trade_id
 
+        except requests.exceptions.HTTPError as e:
+            # log the full Alpaca response body — tells us exactly why it failed
+            # e.g. "shorting not enabled", "insufficient buying power", etc.
+            try:
+                alpaca_error = r.json()
+            except Exception:
+                alpaca_error = r.text
+            log.error(
+                f"[EXEC] Failed to enter {signal.symbol} ({side} {qty:.2f} shares): "
+                f"HTTP {r.status_code} — {alpaca_error}"
+            )
+            return None
+
         except Exception as e:
             log.error(f"[EXEC] Failed to enter {signal.symbol}: {e}")
             return None
@@ -96,7 +118,7 @@ class ExecutionEngine:
         before placing any order. Verifies trade_id matches.
         Prevents phantom short/long mismatches entirely.
         """
-        # verify trade exists and matches
+        # verify trade exists and matches before placing any order
         db_trade = get_open_trade_for_symbol(symbol)
 
         if db_trade is None:
@@ -117,38 +139,41 @@ class ExecutionEngine:
         qty         = db_trade["qty"]
         entry_price = db_trade["entry_price"]
 
-        # to close a long we sell, to close a short we buy
+        # to close a long we sell; to close a short we buy back
         close_side = "sell" if actual_side == "long" else "buy"
+
+        order_payload = {
+            "symbol":        symbol,
+            "qty":           str(round(qty, 2)),
+            "side":          close_side,
+            "type":          "market",
+            "time_in_force": "day"
+        }
 
         try:
             r = self._session.post(
                 f"{ALPACA_TRADE_URL}/orders",
-                json={
-                    "symbol":        symbol,
-                    "qty":           str(round(qty, 2)),
-                    "side":          close_side,
-                    "type":          "market",
-                    "time_in_force": "day"
-                },
+                json=order_payload,
                 timeout=10
             )
             r.raise_for_status()
+
             data       = r.json()
             fill_price = float(data.get("filled_avg_price") or current_price)
 
             # calculate raw P&L
             if actual_side == "long":
-                raw_pnl = (fill_price - entry_price) * qty
+                raw_pnl = (fill_price - float(entry_price)) * qty
             else:
-                raw_pnl = (entry_price - fill_price) * qty
+                raw_pnl = (float(entry_price) - fill_price) * qty
 
             # apply leverage multiplier to simulate futures behavior
             leveraged_pnl = raw_pnl * config.SIMULATED_LEVERAGE
 
-            # save leveraged P&L to DB
+            # save to DB
             close_trade(trade_id, fill_price, reason)
 
-            # manually update pnl in DB with leveraged amount
+            # update P&L with leveraged amount
             from core.database import get_conn
             with get_conn() as conn:
                 cur = conn.cursor()
@@ -156,7 +181,7 @@ class ExecutionEngine:
                     "UPDATE trades SET pnl_usd=%s, pnl_pct=%s WHERE id=%s",
                     (
                         round(leveraged_pnl, 4),
-                        round(leveraged_pnl / (entry_price * qty) * 100, 4),
+                        round(leveraged_pnl / (float(entry_price) * qty) * 100, 4),
                         trade_id
                     )
                 )
@@ -171,18 +196,31 @@ class ExecutionEngine:
             )
             return leveraged_pnl
 
+        except requests.exceptions.HTTPError as e:
+            try:
+                alpaca_error = r.json()
+            except Exception:
+                alpaca_error = r.text
+            log.error(
+                f"[EXEC] Failed to exit {symbol} ({close_side} {qty:.2f} shares): "
+                f"HTTP {r.status_code} — {alpaca_error}"
+            )
+            return None
+
         except Exception as e:
             log.error(f"[EXEC] Failed to exit {symbol}: {e}")
             return None
 
     def close_all_positions(self, reason="eod"):
-        """Close all open positions — used at end of day."""
+        """Close all open positions — used at end of day or shutdown."""
         open_trades = get_open_trades()
+        if not open_trades:
+            return
         for trade in open_trades:
             self.exit_trade(
                 trade["id"],
                 trade["symbol"],
-                trade["entry_price"],
+                float(trade["entry_price"]),
                 reason
             )
         log.info(f"[EXEC] All positions closed ({reason})")
