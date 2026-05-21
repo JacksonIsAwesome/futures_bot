@@ -1,10 +1,7 @@
 # ============================================================
 #   AlphaBot — Simulated Futures Trading Bot
-#   Trades QQQ on Alpaca with 10x simulated leverage
-#   to replicate micro futures (MNQ) behavior
-#
-#   QQQ only — most volatile, cleanest IEX data feed,
-#   least PDT friction of the available symbols
+#   Trades QQQ/NVDA on Alpaca with 10x simulated leverage
+#   to replicate micro futures (MNQ/MES) behavior
 # ============================================================
 
 import os
@@ -43,16 +40,20 @@ MIN_SIGNAL_SCORE     = 3
 ATR_PERIOD           = 14
 ATR_STOP_MULT        = 2.0
 ATR_TP_MULT          = 4.0
-BREAKEVEN_TRIGGER    = 10
 TRAIL_AFTER_BE       = True
 
-# ── Stream settings ───────────────────────────────────────────
-# WebSocket real-time feed replaces bar polling.
-# STALE_SECONDS: mark symbol stale if no tick received in this window.
-# During low volume periods ticks may slow — 120s is safe.
-STREAM_STALE_SECONDS = 120
+# ATR-based breakeven trigger.
+# Stop moves to entry once price moves BREAKEVEN_ATR_MULT * ATR in our favor.
+# 0.75 = price needs to move 75% of one ATR before stop locks to entry.
+# Scales automatically per symbol — QQQ ATR ~$1.40 → trigger ~$1.05
+#                                   NVDA ATR ~$1.50 → trigger ~$1.13
+# Lower = faster breakeven, less profit needed but more premature exits
+# Higher = slower breakeven, more room to breathe but more giveback risk
+# Meta brain can adjust via DB override "BREAKEVEN_ATR_MULT"
+BREAKEVEN_ATR_MULT   = 0.75
 
-# ── Data staleness (kept for fallback reference) ──────────────
+# ── Stream settings ───────────────────────────────────────────
+STREAM_STALE_SECONDS = 120
 MAX_BAR_AGE_MINUTES  = 20
 
 # ── Scanning ─────────────────────────────────────────────────
