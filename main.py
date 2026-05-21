@@ -129,7 +129,8 @@ class AlphaBot:
                 log.warning(f"[DATA] {symbol} data is stale — no ticks yet. Skipping.")
             return
 
-        signal = self.strategy.evaluate(symbol, cache)
+        candles = self.stream.get_candles(symbol, n=10)
+        signal = self.strategy.evaluate(symbol, cache, candles)
         if signal is None:
             return
 
@@ -216,13 +217,13 @@ class AlphaBot:
             self._run_fast_loop()
 
         # ── Slow loop (every 60s per symbol) ──────────────────
-        if self._is_market_open():
-            now = time.time()
-            for symbol in SYMBOLS:
-                last = self._last_slow.get(symbol, 0)
-                if now - last >= 60:
+        now = time.time()
+        for symbol in SYMBOLS:
+            last = self._last_slow.get(symbol, 0)
+            if now - last >= 60:
+                if self._is_market_open():
                     self._run_slow_loop(symbol)
-                    self._last_slow[symbol] = now
+                self._last_slow[symbol] = now
 
         # ── Manual meta brain trigger check ───────────────────
         if self._scan_count % 12 == 0:
