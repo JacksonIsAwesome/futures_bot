@@ -21,7 +21,7 @@ from config import (
     SYMBOLS, STARTING_CAPITAL, SCAN_INTERVAL_SEC,
     MARKET_OPEN, MARKET_CLOSE, META_REVIEW_HOUR
 )
-from core.database      import init_db, get_open_trades, get_open_trade_for_symbol, upsert_daily_summary
+from core.database      import init_db, get_open_trades, get_open_trade_for_symbol, upsert_daily_summary, get_config_override
 from core.data          import DataFetcher
 from core.stream        import PriceStream
 from core.execution     import ExecutionEngine
@@ -59,6 +59,7 @@ class AlphaBot:
         self._scan_count = 0
         self.COOLDOWN_SEC = 30 * 60
         self._last_date  = date.today()
+        self._eod_closed = False   # prevents EOD close firing every scan
 
         log.info("[DB] Database initialized ✓")
         log.info("[DATA] Alpaca data fetcher initialized ✓")
@@ -97,6 +98,7 @@ class AlphaBot:
         if today != self._last_date:
             log.info(f"[MAIN] New trading day: {today}")
             self.risk.reset_daily()
+            self._eod_closed = False
             self._last_date = today
 
     # ── Slow loop — signal evaluation ─────────────────────────
@@ -228,11 +230,17 @@ class AlphaBot:
 
         # ── End of day close ──────────────────────────────────
         if self._is_end_of_day():
-            open_trades = get_open_trades()
-            if open_trades:
-                log.info("[MAIN] 🔔 End of day — closing all positions")
-                self.execution.close_all_positions(reason="eod")
-                upsert_daily_summary()
+            if not self._eod_closed:
+                close_eod = int(get_config_override("CLOSE_EOD", 1))
+                if close_eod:
+                    open_trades = get_open_trades()
+                    if open_trades:
+                        log.info("[MAIN] 🔔 End of day — closing all positions")
+                        self.execution.close_all_positions(reason="eod")
+                    upsert_daily_summary()
+                else:
+                    log.info("[MAIN] 🔔 End of day — CLOSE_EOD off, holding overnight")
+                self._eod_closed = True
             return
 
         # ── Fast loop (every scan) ────────────────────────────
