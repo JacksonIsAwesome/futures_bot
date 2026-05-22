@@ -118,10 +118,11 @@ def get_config():
             'VOLUME_SPIKE_MULT':  1.5,
             'RSI_OVERBOUGHT':     70,
             'RSI_OVERSOLD':       30,
-            'ATR_STOP_MULT':      1.5,
-            'ATR_TP_MULT':        3.0,
-            'BREAKEVEN_TRIGGER':  10,
+            'ATR_STOP_MULT':      2.0,
+            'ATR_TP_MULT':        4.0,
+            'BREAKEVEN_ATR_MULT': 0.75,
             'STARTING_CAPITAL':   2000.0,
+            'CLOSE_EOD':          1,   # 1 = close at end of day, 0 = hold overnight
         }
         for k, v in overrides.items():
             if k in defaults:
@@ -167,14 +168,8 @@ def meta_reviews():
         return jsonify({'error': str(e)}), 500
 
 
-
-
 @app.route('/api/meta/run', methods=['POST'])
 def run_meta():
-    """
-    Set a flag in the DB telling the bot to run a meta brain review.
-    The bot checks this flag every scan and runs the review if set.
-    """
     try:
         with get_conn() as conn:
             cur = conn.cursor()
@@ -188,6 +183,7 @@ def run_meta():
         return jsonify({'success': True, 'message': 'Meta brain review queued — runs within 60 seconds'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
 
 @app.route('/api/performance')
 def performance():
