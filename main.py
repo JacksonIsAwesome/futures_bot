@@ -58,6 +58,7 @@ class AlphaBot:
 
         self._last_slow  = {}
         self._last_exit  = {}
+        self._last_flip  = {}   # tracks flip exits for shorter cooldown
         self._scan_count = 0
         self.COOLDOWN_SEC = 30 * 60
         self._last_date  = date.today()
@@ -95,8 +96,10 @@ class AlphaBot:
 
     def _is_end_of_day(self) -> bool:
         now = datetime.now(ET)
-        close_h, close_m = map(int, MARKET_CLOSE.split(":"))
-        eod = now.replace(hour=close_h - 1, minute=55, second=0)
+        if now.weekday() >= 5:
+            return False
+        # 3:55pm ET — 5 minutes before 4pm close
+        eod = now.replace(hour=15, minute=55, second=0, microsecond=0)
         return now >= eod
 
     # ── Daily reset ───────────────────────────────────────────
@@ -170,12 +173,22 @@ class AlphaBot:
                 )
                 self.risk.record_flip_exit(symbol)
                 self._last_exit[symbol] = time.time()
+                self._last_flip[symbol] = time.time()  # track flip separately
             # always return here — wait for reconfirmation on next scan
             return
 
         # ── Normal cooldown check ─────────────────────────────
+        # After a direction flip the signal has already reconfirmed
+        # over 90 seconds so use a shorter 1-minute cooldown instead
+        # of the standard 30-minute post-exit cooldown.
+        last_flip = self._last_flip.get(symbol, 0)
         last_exit = self._last_exit.get(symbol, 0)
-        if time.time() - last_exit < self.COOLDOWN_SEC:
+        flip_cooldown = 60  # 1 minute after confirmed flip
+        if time.time() - last_flip < flip_cooldown:
+            secs_left = int(flip_cooldown - (time.time() - last_flip))
+            log.debug(f"[MAIN] {symbol} in post-flip cooldown — {secs_left}s remaining")
+            return
+        elif time.time() - last_exit < self.COOLDOWN_SEC:
             mins_left = int((self.COOLDOWN_SEC - (time.time() - last_exit)) / 60)
             log.debug(f"[MAIN] {symbol} in cooldown — {mins_left}m remaining")
             return
