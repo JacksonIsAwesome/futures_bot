@@ -516,7 +516,7 @@ class PriceStream:
             timeout=10,
         )
         resp.raise_for_status()
-        bars = resp.json().get("bars", [])
+        bars = resp.json().get("bars") or []
         log.info(f"[STREAM] Fetched {len(bars)} {BAR_TIMEFRAME} bars for {symbol}")
         return bars
 
