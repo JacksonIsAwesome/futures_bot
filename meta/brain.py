@@ -85,7 +85,7 @@ class MetaBrain:
                     timeout=15,
                 )
                 resp.raise_for_status()
-                raw_bars = resp.json().get("bars", [])
+                raw_bars = resp.json().get("bars") or []
 
                 # simplify bars for the prompt — keep it readable
                 simplified = []
@@ -449,11 +449,10 @@ student who built this bot and wants to understand what's actually happening in 
 market. Be specific — reference actual prices and times from the bar data."""
 
         try:
-            log.info(f"[META] API key length: {len(config.ANTHROPIC_API_KEY)} chars")
             response = requests.post(
                 "https://api.anthropic.com/v1/messages",
                 headers={
-                    "x-api-key":          config.ANTHROPIC_API_KEY,
+                    "x-api-key":          ANTHROPIC_API_KEY,
                     "anthropic-version":  "2023-06-01",
                     "content-type":       "application/json"
                 },
