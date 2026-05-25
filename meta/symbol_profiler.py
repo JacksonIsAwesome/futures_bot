@@ -121,7 +121,7 @@ class SymbolProfiler:
                 timeout=15,
             )
             resp.raise_for_status()
-            bars = resp.json().get("bars", [])
+            bars = resp.json().get("bars") or []
             return bars
         except Exception as e:
             log.error(f"[PROFILER] Failed to fetch bars for {symbol}: {e}")
@@ -152,7 +152,7 @@ class SymbolProfiler:
                 timeout=15,
             )
             resp.raise_for_status()
-            return resp.json().get("bars", [])
+            return resp.json().get("bars") or []
         except Exception as e:
             log.warning(f"[PROFILER] Could not fetch intraday bars for {symbol}: {e}")
             return []
