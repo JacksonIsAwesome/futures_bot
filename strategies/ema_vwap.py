@@ -21,6 +21,9 @@ import logging
 from dataclasses import dataclass
 from typing import Optional, List
 from core.database import get_config_override, log_signal
+from meta.symbol_profiler import SymbolProfiler
+
+_profiler = SymbolProfiler()
 import config
 
 log = logging.getLogger(__name__)
@@ -173,13 +176,29 @@ class EMAVWAPStrategy:
             log.debug(f"[STRAT] {symbol}: ATR is 0 — skipping")
             return None
 
-        # ── Tunable thresholds from DB ────────────────────────
+        # ── Tunable thresholds — symbol profile > DB override > config default ──
+        # 1. Load symbol-specific profile if it exists
+        sym_profile  = _profiler.get_profile(symbol)
+
+        # 2. Helper: profile value → DB override → config default
+        def _val(profile_key, override_key, default):
+            if sym_profile and sym_profile.get(profile_key) is not None:
+                return float(sym_profile[profile_key])
+            return float(self._get_threshold(override_key, default))
+
         min_score    = int(self._get_threshold("MIN_SIGNAL_SCORE", config.MIN_SIGNAL_SCORE))
-        vol_mult_req = float(self._get_threshold("VOLUME_SPIKE_MULT", config.VOLUME_SPIKE_MULT))
+        vol_mult_req = _val("volume_spike_mult", "VOLUME_SPIKE_MULT", config.VOLUME_SPIKE_MULT)
         rsi_ob       = float(self._get_threshold("RSI_OVERBOUGHT",   config.RSI_OVERBOUGHT))
         rsi_os       = float(self._get_threshold("RSI_OVERSOLD",     config.RSI_OVERSOLD))
-        stop_mult    = float(self._get_threshold("ATR_STOP_MULT",    config.ATR_STOP_MULT))
-        tp_mult      = float(self._get_threshold("ATR_TP_MULT",      config.ATR_TP_MULT))
+        stop_mult    = _val("atr_stop_mult", "ATR_STOP_MULT", config.ATR_STOP_MULT)
+        tp_mult      = _val("atr_tp_mult",   "ATR_TP_MULT",  config.ATR_TP_MULT)
+        be_mult      = _val("breakeven_mult","BREAKEVEN_ATR_MULT", config.BREAKEVEN_ATR_MULT)
+
+        # 3. Apply ATR floor — prevents TQQQ-style issues where ATR is
+        #    so small relative to price that stops get placed above entry
+        min_atr_pct   = float(sym_profile["min_atr_pct"])   if sym_profile and sym_profile.get("min_atr_pct")   else 0.003
+        min_atr_floor = float(sym_profile["min_atr_floor"]) if sym_profile and sym_profile.get("min_atr_floor") else price * min_atr_pct
+        atr = max(atr, min_atr_floor)
 
         # ── Direction from EMA relationship ───────────────────
         if ema9 > ema21:
