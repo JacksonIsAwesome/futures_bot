@@ -251,10 +251,24 @@ class RiskManager:
         # trail at 0.5x ATR after breakeven
         TRAIL_STEP = 0.5
 
-        # ATR multiplier for breakeven trigger — configurable
-        be_atr_mult = float(get_config_override(
-            "BREAKEVEN_ATR_MULT", config.BREAKEVEN_ATR_MULT
-        ))
+        # ATR multiplier for breakeven trigger
+        # Checks symbol profile first, then DB override, then config default
+        def _get_be_mult(symbol: str) -> float:
+            try:
+                from core.database import get_conn
+                import psycopg2.extras
+                with get_conn() as conn:
+                    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+                    cur.execute(
+                        "SELECT breakeven_mult FROM symbol_profiles WHERE symbol = %s",
+                        (symbol,)
+                    )
+                    row = cur.fetchone()
+                    if row and row["breakeven_mult"] is not None:
+                        return float(row["breakeven_mult"])
+            except Exception:
+                pass
+            return float(get_config_override("BREAKEVEN_ATR_MULT", config.BREAKEVEN_ATR_MULT))
 
         for trade in open_trades:
             symbol = trade["symbol"]
@@ -279,7 +293,8 @@ class RiskManager:
             else:
                 estimated_atr = abs(entry - tp) / tp_mult
 
-            # ATR-based breakeven trigger — scales per symbol
+            # ATR-based breakeven trigger — per-symbol profile aware
+            be_atr_mult   = _get_be_mult(symbol)
             be_trigger    = estimated_atr * be_atr_mult
             trail_distance = estimated_atr * TRAIL_STEP
 
