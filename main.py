@@ -28,6 +28,7 @@ from core.execution     import ExecutionEngine
 from risk.manager       import RiskManager
 from strategies.ema_vwap import EMAVWAPStrategy
 from meta.brain         import MetaBrain
+from meta.symbol_profiler import SymbolProfiler
 
 logging.basicConfig(
     level=logging.INFO,
@@ -53,6 +54,7 @@ class AlphaBot:
         self.risk      = RiskManager(STARTING_CAPITAL)
         self.strategy  = EMAVWAPStrategy()
         self.meta      = MetaBrain()
+        self.profiler  = SymbolProfiler()
 
         self._last_slow  = {}
         self._last_exit  = {}
@@ -69,6 +71,12 @@ class AlphaBot:
         log.info("[META] Meta brain initialized ✓")
 
         self.stream.start()
+
+        # run symbol profiler at startup so profiles are ready before first trade
+        try:
+            self.profiler.run()
+        except Exception as e:
+            log.error(f"[PROFILER] Startup profiling failed: {e}")
 
         log.info("[BOOT] All modules initialized ✓")
         log.info(f"[MAIN] Starting scan loop (every {SCAN_INTERVAL_SEC}s)")
@@ -277,6 +285,11 @@ class AlphaBot:
         log.info("[MAIN] Running daily meta brain review...")
         upsert_daily_summary()
         self.meta.run_review()
+        # refresh symbol profiles nightly with updated trade data
+        try:
+            self.profiler.run()
+        except Exception as e:
+            log.error(f"[PROFILER] Nightly profiling failed: {e}")
 
     def _check_meta_flag(self):
         try:
