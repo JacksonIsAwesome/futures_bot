@@ -222,7 +222,10 @@ class RiskManager:
         qty_by_size        = max_position_value / price
 
         qty = min(qty_by_risk, qty_by_size)
-        qty = max(round(qty, 2), 0.01)
+        if signal.direction == "short":
+            qty = max(int(qty), 1)  # whole numbers only — Alpaca blocks fractional short sells
+        else:
+            qty = max(round(qty, 2), 0.01)  # longs can be fractional
 
         log.info(
             f"[RISK] Position size {symbol}: qty={qty:.2f} "
