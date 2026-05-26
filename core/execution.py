@@ -212,13 +212,13 @@ class ExecutionEngine:
             return None
 
     def close_all_positions(self, reason="eod"):
-    open_trades = get_open_trades()
-    if not open_trades:
-        return
-    for trade in open_trades:
-        # get actual current price instead of entry price
-        symbol = trade["symbol"]
-        current_price = self._data.get_price(symbol)
+        open_trades = get_open_trades()
+        if not open_trades:
+            return
+        for trade in open_trades:
+            # get actual current price instead of entry price
+            symbol = trade["symbol"]
+            current_price = self._data.get_price(symbol)
         if current_price is None:
             current_price = float(trade["entry_price"])  # fallback only
         self.exit_trade(
