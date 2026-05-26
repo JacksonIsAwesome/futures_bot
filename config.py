@@ -14,7 +14,7 @@ ALPACA_API_KEY    = os.environ.get("ALPACA_API_KEY", "")
 ALPACA_SECRET_KEY = os.environ.get("ALPACA_SECRET_KEY", "")
 
 # ── What we trade ────────────────────────────────────────────
-SYMBOLS = ["QQQ", "NVDA", "TQQQ", "SOXL", "UPRO"]
+SYMBOLS = ["QQQ", "NVDA", "TQQQ", "SOXL"]
 PRIMARY  = "QQQ"
 
 # ── Simulated futures leverage ────────────────────────────────
