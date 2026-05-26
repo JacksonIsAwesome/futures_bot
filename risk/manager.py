@@ -111,15 +111,22 @@ class RiskManager:
         return False
 
     def should_flip_exit(self, symbol: str, new_direction: str) -> bool:
-        """
-        Returns True if there's an open trade in the opposite direction
-        of new_direction, meaning we should exit before considering entry.
-        Called from main.py slow loop before can_trade check.
-        """
         existing = get_open_trade_for_symbol(symbol)
         if existing is None:
             return False
-        return existing["side"] != new_direction
+        if existing["side"] == new_direction:
+            return False
+        
+        # don't flip if trade has already hit breakeven and is trailing
+        # let the trailing stop do its job instead of force-exiting
+        if existing["breakeven_set"]:
+            log.debug(
+                f"[RISK] {symbol} flip signal ignored — "
+                f"trade is trailing, letting stop manage exit"
+            )
+            return False
+        
+        return True
 
     # ── Trade validation ──────────────────────────────────────
 
