@@ -58,11 +58,11 @@ class AlphaBot:
 
         self._last_slow  = {}
         self._last_exit  = {}
-        self._last_flip  = {}   # tracks flip exits for shorter cooldown
+        self._last_flip  = {}
         self._scan_count = 0
         self.COOLDOWN_SEC = 30 * 60
         self._last_date  = date.today()
-        self._eod_closed = False   # prevents EOD close firing every scan
+        self._eod_closed = False
 
         log.info("[DB] Database initialized ✓")
         log.info("[DATA] Alpaca data fetcher initialized ✓")
@@ -78,6 +78,15 @@ class AlphaBot:
             self.profiler.run()
         except Exception as e:
             log.error(f"[PROFILER] Startup profiling failed: {e}")
+
+        # ── CHANGE 1: Seed volume acceleration tracker ────────
+        # Give the strategy historical candle volumes immediately so it
+        # has a baseline for projecting intra-candle volume from minute 1.
+        for sym in SYMBOLS:
+            vols = self.stream.get_candle_volumes(sym, n=20)
+            if vols:
+                self.strategy.seed_volume_history(sym, vols)
+                log.info(f"[BOOT] Volume history seeded for {sym}: {len(vols)} candles")
 
         log.info("[BOOT] All modules initialized ✓")
         log.info(f"[MAIN] Starting scan loop (every {SCAN_INTERVAL_SEC}s)")
@@ -98,7 +107,6 @@ class AlphaBot:
         now = datetime.now(ET)
         if now.weekday() >= 5:
             return False
-        # 3:55pm ET — 5 minutes before 4pm close
         eod = now.replace(hour=15, minute=55, second=0, microsecond=0)
         return now >= eod
 
@@ -120,10 +128,10 @@ class AlphaBot:
 
         Flow:
           1. Get live cache and candles from stream
-          2. Evaluate signal via strategy
-          3. Check for direction flip — if we're long and signal says short
-             (or vice versa), exit the current trade and wait for reconfirmation
-          4. If no flip and no cooldown, check risk rules and enter trade
+          2. Feed tick to volume acceleration tracker
+          3. Evaluate signal via strategy (with elapsed_seconds for vol projection)
+          4. Check for direction flip
+          5. Risk check and entry
         """
         cache = self.stream.get_price(symbol)
 
@@ -144,8 +152,21 @@ class AlphaBot:
                 log.warning(f"[DATA] {symbol} data is stale — no ticks yet. Skipping.")
             return
 
-        candles = self.stream.get_candles(symbol, n=10)
-        signal  = self.strategy.evaluate(symbol, cache, candles)
+        # ── CHANGE 2a: Feed tick to volume acceleration tracker ──
+        # Must happen every scan so the tracker stays current.
+        if cache.get("volume") is not None:
+            candle_minute = self.stream.get_candle_minute(symbol)
+            if candle_minute is not None:
+                self.strategy.on_tick(symbol, cache["volume"], candle_minute)
+
+        # ── CHANGE 2b: Get elapsed seconds for vol projection ────
+        elapsed = self.stream.get_elapsed_seconds(symbol)
+
+        # ── CHANGE 2c: Pass more candles + elapsed_seconds ───────
+        # 25 candles (was 10) gives ROC and VWAP std dev enough history.
+        candles = self.stream.get_candles(symbol, n=25)
+        signal  = self.strategy.evaluate(symbol, cache, candles, elapsed_seconds=elapsed)
+
         if signal is None:
             return
 
@@ -153,10 +174,6 @@ class AlphaBot:
             return
 
         # ── Direction flip detection ──────────────────────────
-        # If we're in a trade and the signal flips direction,
-        # exit the current trade and wait one full scan cycle (90s)
-        # for reconfirmation before entering the new direction.
-        # This prevents whipsawing in and out on noisy signals.
         if self.risk.should_flip_exit(symbol, signal.direction):
             existing = get_open_trade_for_symbol(symbol)
             if existing:
@@ -173,17 +190,13 @@ class AlphaBot:
                 )
                 self.risk.record_flip_exit(symbol)
                 self._last_exit[symbol] = time.time()
-                self._last_flip[symbol] = time.time()  # track flip separately
-            # always return here — wait for reconfirmation on next scan
+                self._last_flip[symbol] = time.time()
             return
 
-        # ── Normal cooldown check ─────────────────────────────
-        # After a direction flip the signal has already reconfirmed
-        # over 90 seconds so use a shorter 1-minute cooldown instead
-        # of the standard 30-minute post-exit cooldown.
+        # ── Cooldown check ────────────────────────────────────
         last_flip = self._last_flip.get(symbol, 0)
         last_exit = self._last_exit.get(symbol, 0)
-        flip_cooldown = 60  # 1 minute after confirmed flip
+        flip_cooldown = 60
         if time.time() - last_flip < flip_cooldown:
             secs_left = int(flip_cooldown - (time.time() - last_flip))
             log.debug(f"[MAIN] {symbol} in post-flip cooldown — {secs_left}s remaining")
@@ -194,7 +207,6 @@ class AlphaBot:
             return
 
         # ── Risk validation ───────────────────────────────────
-        # Includes flip reconfirmation check inside can_trade
         ok, reason = self.risk.can_trade(symbol, signal)
         if not ok:
             log.debug(f"[MAIN] {symbol} blocked: {reason}")
@@ -214,7 +226,6 @@ class AlphaBot:
         """
         Runs every 5 seconds.
         Reads live prices from stream cache for open position management.
-        Handles stops, TPs, ATR-based breakeven, and trailing stops.
         """
         open_trades = get_open_trades()
         if not open_trades:
@@ -298,7 +309,6 @@ class AlphaBot:
         log.info("[MAIN] Running daily meta brain review...")
         upsert_daily_summary()
         self.meta.run_review()
-        # refresh symbol profiles nightly with updated trade data
         try:
             self.profiler.run()
         except Exception as e:
