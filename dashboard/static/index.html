@@ -255,10 +255,12 @@
 
   .score-pip.filled { background: var(--blue-glow); }
 
+  /* ── Controls layout ─────────────────────────────── */
   .controls-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 16px;
+    margin-bottom: 16px;
   }
 
   .control-group {
@@ -291,21 +293,28 @@
     min-width: 0;
   }
 
+  .control-hint {
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+
   .control-value {
     font-size: 12px;
     color: var(--cyan);
     font-weight: 600;
-    min-width: 40px;
+    min-width: 48px;
     text-align: right;
   }
 
   input[type="range"] {
     -webkit-appearance: none;
-    width: 120px;
+    width: 110px;
     height: 4px;
     background: var(--navy-accent);
     border-radius: 2px;
     outline: none;
+    flex-shrink: 0;
   }
 
   input[type="range"]::-webkit-slider-thumb {
@@ -328,25 +337,12 @@
     letter-spacing: 0.05em;
     cursor: pointer;
     transition: opacity 0.15s;
-    margin-top: 8px;
   }
 
   .save-btn:hover { opacity: 0.85; }
   .save-btn:active { transform: scale(0.98); }
 
-  /* EOD toggle */
-  .toggle-wrap {
-    margin-left: auto;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .toggle-label {
-    font-size: 12px;
-    color: var(--text-secondary);
-  }
-
+  /* ── Toggle switch ───────────────────────────────── */
   .toggle-switch {
     position: relative;
     display: inline-block;
@@ -390,6 +386,63 @@
     background: white;
   }
 
+  /* ── Session controls panel ──────────────────────── */
+  .session-panel {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+    margin-bottom: 16px;
+  }
+
+  .session-panel h3 {
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+  }
+
+  .session-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+
+  .session-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    min-width: 200px;
+  }
+
+  .blackout-inputs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .blackout-inputs input[type="number"] {
+    width: 52px;
+    background: var(--navy-mid);
+    border: 1px solid var(--border-bright);
+    border-radius: 4px;
+    color: var(--cyan);
+    font-family: inherit;
+    font-size: 12px;
+    padding: 4px 8px;
+    text-align: center;
+    outline: none;
+  }
+
+  .blackout-inputs input[type="number"]:focus {
+    border-color: var(--blue-glow);
+  }
+
+  /* ── Log ─────────────────────────────────────────── */
   .log-container {
     background: var(--navy-darkest);
     border: 1px solid var(--border);
@@ -442,6 +495,12 @@
   }
 
   .refresh-btn:hover { border-color: var(--border-bright); color: var(--text-secondary); }
+
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 16px 0;
+  }
 
   @media (max-width: 700px) {
     .controls-grid { grid-template-columns: 1fr; }
@@ -559,10 +618,10 @@
       <table class="data-table">
         <thead><tr>
           <th>Time</th><th>Symbol</th><th>Direction</th><th>Score</th>
-          <th>EMA</th><th>VWAP</th><th>VOL</th><th>RSI</th><th>PA</th><th>Traded</th>
+          <th>EMA</th><th>VWAP</th><th>VOL</th><th>RSI</th><th>DEV</th><th>ROC</th><th>Traded</th>
         </tr></thead>
         <tbody id="signals-body">
-          <tr><td colspan="10" class="empty-state">No signals yet</td></tr>
+          <tr><td colspan="11" class="empty-state">No signals yet</td></tr>
         </tbody>
       </table>
     </div>
@@ -572,32 +631,55 @@
 <!-- CONTROLS -->
 <div id="tab-controls" class="content">
   <div style="margin-bottom:16px;color:var(--text-muted);font-size:11px;letter-spacing:0.05em;">
-    Changes save to the database and take effect on the bot's next scan cycle.
+    Changes save to the database and take effect on the bot's next scan cycle (~5 seconds).
   </div>
 
   <div class="controls-grid">
+
+    <!-- Strategy v2 signals -->
     <div class="control-group">
-      <h3>Strategy</h3>
+      <h3>Strategy — Anticipation Signals</h3>
       <div class="control-row">
-        <div class="control-label">Min signal score</div>
-        <input type="range" min="1" max="5" step="1" id="ctrl-MIN_SIGNAL_SCORE" oninput="updateVal(this)">
+        <div>
+          <div class="control-label">Min signal score</div>
+          <div class="control-hint">Signals needed to fire a trade (out of 6)</div>
+        </div>
+        <input type="range" min="2" max="6" step="1" id="ctrl-MIN_SIGNAL_SCORE" oninput="updateVal(this)">
         <div class="control-value" id="val-MIN_SIGNAL_SCORE">3</div>
       </div>
       <div class="control-row">
-        <div class="control-label">EMA fast period</div>
-        <input type="range" min="3" max="20" step="1" id="ctrl-EMA_FAST" oninput="updateVal(this)">
-        <div class="control-value" id="val-EMA_FAST">9</div>
+        <div>
+          <div class="control-label">ROC min long %</div>
+          <div class="control-hint">Price must rise X% over 3 candles to confirm long</div>
+        </div>
+        <input type="range" min="0.02" max="0.30" step="0.01" id="ctrl-ROC_MIN_LONG" oninput="updateVal(this)">
+        <div class="control-value" id="val-ROC_MIN_LONG">0.08</div>
       </div>
       <div class="control-row">
-        <div class="control-label">EMA slow period</div>
-        <input type="range" min="10" max="50" step="1" id="ctrl-EMA_SLOW" oninput="updateVal(this)">
-        <div class="control-value" id="val-EMA_SLOW">21</div>
+        <div>
+          <div class="control-label">ROC min short %</div>
+          <div class="control-hint">Price must fall X% over 3 candles to confirm short</div>
+        </div>
+        <input type="range" min="-0.30" max="-0.02" step="0.01" id="ctrl-ROC_MIN_SHORT" oninput="updateVal(this)">
+        <div class="control-value" id="val-ROC_MIN_SHORT">-0.08</div>
       </div>
       <div class="control-row">
-        <div class="control-label">Volume spike mult</div>
-        <input type="range" min="1.0" max="3.0" step="0.1" id="ctrl-VOLUME_SPIKE_MULT" oninput="updateVal(this)">
-        <div class="control-value" id="val-VOLUME_SPIKE_MULT">1.5</div>
+        <div>
+          <div class="control-label">VWAP deviation mult</div>
+          <div class="control-hint">Std devs from VWAP for breakout signal (1.5 = top 13% of moves)</div>
+        </div>
+        <input type="range" min="0.5" max="3.0" step="0.1" id="ctrl-VWAP_DEV_MULT" oninput="updateVal(this)">
+        <div class="control-value" id="val-VWAP_DEV_MULT">1.5</div>
       </div>
+      <div class="control-row">
+        <div>
+          <div class="control-label">Vol acceleration mult</div>
+          <div class="control-hint">Projected candle volume must be X times average</div>
+        </div>
+        <input type="range" min="1.0" max="4.0" step="0.1" id="ctrl-VOL_ACCEL_MULT" oninput="updateVal(this)">
+        <div class="control-value" id="val-VOL_ACCEL_MULT">1.8</div>
+      </div>
+      <div class="divider"></div>
       <div class="control-row">
         <div class="control-label">RSI overbought</div>
         <input type="range" min="60" max="85" step="1" id="ctrl-RSI_OVERBOUGHT" oninput="updateVal(this)">
@@ -610,6 +692,7 @@
       </div>
     </div>
 
+    <!-- Risk -->
     <div class="control-group">
       <h3>Risk</h3>
       <div class="control-row">
@@ -650,18 +733,48 @@
     </div>
   </div>
 
-  <div style="margin-top:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-    <button class="save-btn" onclick="saveConfig()">Save Changes</button>
-    <span id="save-status" style="font-size:11px;color:var(--text-muted);"></span>
-    <div class="toggle-wrap">
-      <span class="toggle-label">Close positions at EOD</span>
+  <!-- Session controls -->
+  <div class="session-panel">
+    <h3>Session Controls</h3>
+
+    <!-- EOD close -->
+    <div class="session-row">
+      <div class="session-label">Close all positions at end of day (3:55pm ET)</div>
       <label class="toggle-switch">
-        <input type="checkbox" id="ctrl-CLOSE_EOD" onchange="toggleCloseEOD(this)" checked>
-        <span class="toggle-track">
-          <span class="toggle-thumb"></span>
-        </span>
+        <input type="checkbox" id="ctrl-CLOSE_EOD" onchange="toggleBool(this,'CLOSE_EOD')">
+        <span class="toggle-track"><span class="toggle-thumb"></span></span>
       </label>
     </div>
+
+    <div class="divider"></div>
+
+    <!-- Blackout window -->
+    <div class="session-row">
+      <div class="session-label">Block trading during dead zone (choppy midday hours)</div>
+      <label class="toggle-switch">
+        <input type="checkbox" id="ctrl-BLACKOUT_ENABLED" onchange="toggleBool(this,'BLACKOUT_ENABLED'); updateBlackoutState()">
+        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+      </label>
+    </div>
+    <div class="session-row" id="blackout-time-row" style="opacity:0.4;pointer-events:none;">
+      <div class="session-label" style="color:var(--text-muted);">Blackout window (ET, 24h format)</div>
+      <div class="blackout-inputs">
+        <input type="number" id="ctrl-BLACKOUT_START" min="9" max="15" value="11"
+               oninput="configState['BLACKOUT_START']=parseInt(this.value)">
+        <span>:00 ET to</span>
+        <input type="number" id="ctrl-BLACKOUT_END" min="9" max="16" value="13"
+               oninput="configState['BLACKOUT_END']=parseInt(this.value)">
+        <span>:00 ET</span>
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--text-muted);margin-top:4px;padding-left:2px;">
+      Meta brain recommended: 11am–1pm ET based on today's data. Adjust as you learn more.
+    </div>
+  </div>
+
+  <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+    <button class="save-btn" onclick="saveConfig()">Save All Changes</button>
+    <span id="save-status" style="font-size:11px;color:var(--text-muted);"></span>
   </div>
 </div>
 
@@ -727,6 +840,7 @@
     <div style="color:var(--text-muted);">Loading...</div>
   </div>
 </div>
+
 <script>
 let pnlChart = null, wrChart = null;
 const configState = {};
@@ -755,9 +869,10 @@ function fmtTime(iso) {
   return new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
-function scorePips(score) {
+function scorePips(score, max) {
+  max = max || 6;
   let h = '<div class="score-bar">';
-  for (let i = 0; i < 5; i++) h += `<div class="score-pip${i < score ? ' filled' : ''}"></div>`;
+  for (let i = 0; i < max; i++) h += `<div class="score-pip${i < score ? ' filled' : ''}"></div>`;
   return h + '</div>';
 }
 
@@ -800,7 +915,7 @@ async function loadOverview() {
           <td style="color:var(--red);">$${parseFloat(t.stop_loss).toFixed(2)}</td>
           <td style="color:var(--green);">$${parseFloat(t.take_profit).toFixed(2)}</td>
           <td style="color:${t.pnl_usd >= 0 ? 'var(--green)' : 'var(--red)'};">${fmt(t.pnl_usd)}</td>
-          <td>${scorePips(t.signal_score)}</td>
+          <td>${scorePips(t.signal_score, 6)}</td>
         </tr>`).join('');
 
     const rb = document.getElementById('recent-trades-body');
@@ -811,7 +926,7 @@ async function loadOverview() {
           <td><span class="badge badge-${t.side}">${t.side.toUpperCase()}</span></td>
           <td style="color:${t.pnl_usd >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:500;">${fmt(t.pnl_usd)}</td>
           <td><span class="badge ${t.status === 'stopped' ? 'badge-stopped' : 'badge-closed'}">${t.exit_reason || t.status}</span></td>
-          <td>${scorePips(t.signal_score)}</td>
+          <td>${scorePips(t.signal_score, 6)}</td>
           <td style="color:var(--text-muted);">${fmtTime(t.exited_at)}</td>
         </tr>`).join('');
   } catch(e) { console.error(e); }
@@ -822,7 +937,7 @@ async function loadSignals() {
     const rows = await fetch('/api/signals').then(r => r.json());
     const sb = document.getElementById('signals-body');
     if (!rows.length || rows.error) {
-      sb.innerHTML = '<tr><td colspan="10" class="empty-state">No signals yet</td></tr>';
+      sb.innerHTML = '<tr><td colspan="11" class="empty-state">No signals yet</td></tr>';
       return;
     }
     const dot = v => `<span class="sig-dot ${v ? 'on' : 'off'}"></span>`;
@@ -830,12 +945,13 @@ async function loadSignals() {
       <td style="color:var(--text-muted);">${fmtTime(s.timestamp)}</td>
       <td style="color:var(--text-primary);font-weight:500;">${s.symbol}</td>
       <td>${s.direction ? `<span class="badge badge-${s.direction}">${s.direction.toUpperCase()}</span>` : '<span style="color:var(--text-muted)">—</span>'}</td>
-      <td>${scorePips(s.score)}</td>
+      <td>${scorePips(s.score, 6)}</td>
       <td>${dot(s.ema_cross)}</td>
       <td>${dot(s.vwap_side)}</td>
       <td>${dot(s.volume_spike)}</td>
       <td>${dot(s.rsi_confirm)}</td>
       <td>${dot(s.price_action)}</td>
+      <td>${dot(s.roc_confirm !== undefined ? s.roc_confirm : null)}</td>
       <td>${s.traded ? '<span class="badge badge-open">TRADED</span>' : '<span style="color:var(--text-muted)">—</span>'}</td>
     </tr>`).join('');
   } catch(e) { console.error(e); }
@@ -845,27 +961,28 @@ async function loadConfig() {
   try {
     const cfg = await fetch('/api/config').then(r => r.json());
 
-    const set = (key, val) => {
+    const setSlider = (key, val, suffix) => {
       const el = document.getElementById('ctrl-' + key);
       const ve = document.getElementById('val-' + key);
-      if (el) { el.value = val; configState[key] = val; }
-      if (ve) ve.textContent = val;
+      if (el) { el.value = val; }
+      if (ve) ve.textContent = val + (suffix || '');
+      configState[key] = val;
     };
 
-    set('MIN_SIGNAL_SCORE',   cfg.MIN_SIGNAL_SCORE);
-    set('EMA_FAST',           cfg.EMA_FAST);
-    set('EMA_SLOW',           cfg.EMA_SLOW);
-    set('VOLUME_SPIKE_MULT',  cfg.VOLUME_SPIKE_MULT);
-    set('RSI_OVERBOUGHT',     cfg.RSI_OVERBOUGHT);
-    set('RSI_OVERSOLD',       cfg.RSI_OVERSOLD);
-    set('MAX_OPEN_TRADES',    cfg.MAX_OPEN_TRADES);
-    set('ATR_STOP_MULT',      cfg.ATR_STOP_MULT);
-    set('ATR_TP_MULT',        cfg.ATR_TP_MULT);
-    set('BREAKEVEN_ATR_MULT', cfg.BREAKEVEN_ATR_MULT);
+    // Strategy v2
+    setSlider('MIN_SIGNAL_SCORE', cfg.MIN_SIGNAL_SCORE);
+    setSlider('ROC_MIN_LONG',     cfg.ROC_MIN_LONG);
+    setSlider('ROC_MIN_SHORT',    cfg.ROC_MIN_SHORT);
+    setSlider('VWAP_DEV_MULT',    cfg.VWAP_DEV_MULT);
+    setSlider('VOL_ACCEL_MULT',   cfg.VOL_ACCEL_MULT);
+    setSlider('RSI_OVERBOUGHT',   cfg.RSI_OVERBOUGHT);
+    setSlider('RSI_OVERSOLD',     cfg.RSI_OVERSOLD);
 
+    // Risk
     const lev = document.getElementById('ctrl-SIMULATED_LEVERAGE');
-    if (lev) { lev.value = cfg.SIMULATED_LEVERAGE; configState['SIMULATED_LEVERAGE'] = cfg.SIMULATED_LEVERAGE; }
+    if (lev) lev.value = cfg.SIMULATED_LEVERAGE;
     document.getElementById('val-SIMULATED_LEVERAGE').textContent = cfg.SIMULATED_LEVERAGE + 'x';
+    configState['SIMULATED_LEVERAGE'] = cfg.SIMULATED_LEVERAGE;
 
     const dlPct = Math.round(cfg.MAX_DAILY_LOSS_PCT * 100);
     const dlEl = document.getElementById('ctrl-MAX_DAILY_LOSS_PCT_pct');
@@ -879,11 +996,30 @@ async function loadConfig() {
     document.getElementById('val-MAX_POSITION_PCT').textContent = mpPct + '%';
     configState['MAX_POSITION_PCT'] = cfg.MAX_POSITION_PCT;
 
-    // CLOSE_EOD toggle
+    setSlider('MAX_OPEN_TRADES',    cfg.MAX_OPEN_TRADES);
+    setSlider('ATR_STOP_MULT',      cfg.ATR_STOP_MULT);
+    setSlider('ATR_TP_MULT',        cfg.ATR_TP_MULT);
+    setSlider('BREAKEVEN_ATR_MULT', cfg.BREAKEVEN_ATR_MULT);
+
+    // Session toggles
     const closeEod = parseInt(cfg.CLOSE_EOD ?? 1);
     const eodEl = document.getElementById('ctrl-CLOSE_EOD');
     if (eodEl) eodEl.checked = closeEod === 1;
     configState['CLOSE_EOD'] = closeEod;
+
+    const blackoutEnabled = parseInt(cfg.BLACKOUT_ENABLED ?? 0);
+    const boEl = document.getElementById('ctrl-BLACKOUT_ENABLED');
+    if (boEl) boEl.checked = blackoutEnabled === 1;
+    configState['BLACKOUT_ENABLED'] = blackoutEnabled;
+
+    const boStart = document.getElementById('ctrl-BLACKOUT_START');
+    const boEnd   = document.getElementById('ctrl-BLACKOUT_END');
+    if (boStart) boStart.value = cfg.BLACKOUT_START ?? 11;
+    if (boEnd)   boEnd.value   = cfg.BLACKOUT_END   ?? 13;
+    configState['BLACKOUT_START'] = cfg.BLACKOUT_START ?? 11;
+    configState['BLACKOUT_END']   = cfg.BLACKOUT_END   ?? 13;
+
+    updateBlackoutState();
 
   } catch(e) { console.error(e); }
 }
@@ -892,7 +1028,8 @@ function updateVal(el) {
   const key = el.id.replace('ctrl-', '');
   const val = parseFloat(el.value);
   configState[key] = val;
-  document.getElementById('val-' + key).textContent = val + (key === 'SIMULATED_LEVERAGE' ? 'x' : '');
+  const ve = document.getElementById('val-' + key);
+  if (ve) ve.textContent = val + (key === 'SIMULATED_LEVERAGE' ? 'x' : '');
 }
 
 function updateValPct(el, realKey) {
@@ -901,8 +1038,15 @@ function updateValPct(el, realKey) {
   document.getElementById('val-' + realKey).textContent = pct + '%';
 }
 
-function toggleCloseEOD(checkbox) {
-  configState['CLOSE_EOD'] = checkbox.checked ? 1 : 0;
+function toggleBool(checkbox, key) {
+  configState[key] = checkbox.checked ? 1 : 0;
+}
+
+function updateBlackoutState() {
+  const enabled = document.getElementById('ctrl-BLACKOUT_ENABLED').checked;
+  const row = document.getElementById('blackout-time-row');
+  row.style.opacity = enabled ? '1' : '0.4';
+  row.style.pointerEvents = enabled ? 'auto' : 'none';
 }
 
 async function saveConfig() {
@@ -1038,18 +1182,19 @@ function loadLogs() {
       return;
     }
     container.innerHTML = signals.slice(0, 200).map(s => {
-      const dir  = s.direction ? s.direction.toUpperCase() : 'SCAN';
+      const dir    = s.direction ? s.direction.toUpperCase() : 'SCAN';
       const checks = [
-        s.ema_cross    ? 'EMA✓' : 'EMA✗',
+        s.ema_cross    ? 'EMA✓'  : 'EMA✗',
         s.vwap_side    ? 'VWAP✓' : 'VWAP✗',
         s.volume_spike ? 'VOL✓'  : 'VOL✗',
         s.rsi_confirm  ? 'RSI✓'  : 'RSI✗',
-        s.price_action ? 'PA✓'   : 'PA✗',
-      ].join(' ');
+        s.price_action ? 'DEV✓'  : 'DEV✗',
+        s.roc_confirm  !== undefined ? (s.roc_confirm ? 'ROC✓' : 'ROC✗') : '',
+      ].filter(Boolean).join(' ');
       return `<div class="log-entry">
         <span class="log-time">${fmtTime(s.timestamp)}</span>
         <span class="log-level-info">[SIGNAL]</span>
-        <span class="log-msg ${s.traded ? 'highlight' : ''}">${s.symbol} ${dir} [${s.score}/5] ${checks}${s.traded ? ' → TRADE ENTERED' : ''}</span>
+        <span class="log-msg ${s.traded ? 'highlight' : ''}">${s.symbol} ${dir} [${s.score}/6] ${checks}${s.traded ? ' → TRADE ENTERED' : ''}</span>
       </div>`;
     }).join('');
     container.scrollTop = 0;
