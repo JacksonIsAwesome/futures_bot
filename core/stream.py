@@ -17,6 +17,14 @@ Why candles for ATR:
   We build our own 1-min candles from the tick stream so ATR updates
   throughout the day using real intraday volatility, not stale morning data.
 
+v2 additions:
+  - get_candle_volumes(symbol): returns completed candle volumes for seeding
+    the volume acceleration tracker in the strategy
+  - get_elapsed_seconds(symbol): returns seconds elapsed since current
+    candle opened, used for intra-candle volume acceleration projection
+  - get_candle_minute(symbol): returns the current candle's minute boundary
+    as a datetime, used by the strategy's on_tick feed
+
 The strategy reads from stream.get_price(symbol).
 """
 
@@ -66,7 +74,7 @@ def _atr(highs: list, lows: list, closes: list, period: int = 14) -> float:
     Requires at least 2 candles. Falls back to HL range if fewer.
     """
     if not highs or not lows or not closes:
-        return 1.0   # safe fallback — never return 0
+        return 1.0
     if len(closes) < 2:
         return abs(highs[-1] - lows[-1]) or 1.0
     trs = []
@@ -117,8 +125,8 @@ class CandleBuilder:
     When a candle closes (minute boundary crossed), it's added to the
     candle history and ATR is recalculated from real high/low data.
 
-    This gives us live, accurate ATR that updates every minute using
-    actual intraday volatility — not stale morning bar data.
+    v2: also tracks per-candle volume for the volume acceleration tracker,
+    and exposes elapsed_seconds so the strategy can project intra-candle volume.
     """
 
     def __init__(self, atr_period: int = ATR_PERIOD):
@@ -128,17 +136,21 @@ class CandleBuilder:
         self._candle_highs   = deque(maxlen=atr_period + 5)
         self._candle_lows    = deque(maxlen=atr_period + 5)
         self._candle_closes  = deque(maxlen=atr_period + 5)
+        self._candle_volumes = deque(maxlen=atr_period + 5)  # NEW: per-candle volume
 
         # current open candle
         self._candle_open    = None
         self._candle_high    = None
         self._candle_low     = None
         self._candle_close   = None
-        self._candle_minute  = None   # which minute this candle belongs to
+        self._candle_volume  = 0       # NEW: accumulated volume this candle
+        self._candle_minute  = None    # which minute this candle belongs to
+        self._candle_start   = None    # NEW: wall-clock time candle opened
 
         self._lock = threading.Lock()
 
-    def seed_from_bars(self, highs: list, lows: list, closes: list):
+    def seed_from_bars(self, highs: list, lows: list, closes: list,
+                       volumes: list = None):
         """
         Pre-populate candle history from bar data on startup.
         This means ATR is available immediately, not just after
@@ -148,11 +160,13 @@ class CandleBuilder:
             self._candle_highs.extend(highs)
             self._candle_lows.extend(lows)
             self._candle_closes.extend(closes)
+            if volumes:
+                self._candle_volumes.extend(volumes)
 
-    def on_tick(self, price: float, ts: datetime) -> bool:
+    def on_tick(self, price: float, volume: int, ts: datetime) -> bool:
         """
-        Process a new tick. Returns True if a candle just closed
-        (meaning ATR should be recalculated by the caller).
+        Process a new tick. Returns True if a candle just closed.
+        v2: also accumulates volume per candle and tracks candle start time.
         """
         minute = ts.replace(second=0, microsecond=0)
         candle_closed = False
@@ -161,23 +175,28 @@ class CandleBuilder:
             if self._candle_minute is None:
                 # first tick ever — open first candle
                 self._candle_minute = minute
+                self._candle_start  = datetime.utcnow()
                 self._candle_open   = price
                 self._candle_high   = price
                 self._candle_low    = price
                 self._candle_close  = price
+                self._candle_volume = volume
 
             elif minute > self._candle_minute:
-                # new minute — close the previous candle and open a new one
+                # new minute — close the previous candle
                 self._candle_highs.append(self._candle_high)
                 self._candle_lows.append(self._candle_low)
                 self._candle_closes.append(self._candle_close)
+                self._candle_volumes.append(self._candle_volume)  # NEW
 
                 # open new candle
                 self._candle_minute = minute
+                self._candle_start  = datetime.utcnow()
                 self._candle_open   = price
                 self._candle_high   = price
                 self._candle_low    = price
                 self._candle_close  = price
+                self._candle_volume = volume
 
                 candle_closed = True
 
@@ -187,7 +206,8 @@ class CandleBuilder:
                     self._candle_high = price
                 if price < self._candle_low:
                     self._candle_low = price
-                self._candle_close = price
+                self._candle_close  = price
+                self._candle_volume += volume   # NEW: accumulate
 
         return candle_closed
 
@@ -198,31 +218,63 @@ class CandleBuilder:
             l = list(self._candle_lows)
             c = list(self._candle_closes)
         if len(c) < 2:
-            return 1.0   # not enough candles yet
+            return 1.0
         return _atr(h, l, c, self.atr_period)
 
     def get_candles(self, n: int = 10) -> list:
         """
         Return the last N completed candles as a list of dicts.
-        Each dict has keys: high, low, close.
-        Used by the strategy for price action signal evaluation.
-        Returns empty list if fewer than n candles have completed.
+        Each dict has keys: high, low, close, volume.
         """
         with self._lock:
-            highs  = list(self._candle_highs)
-            lows   = list(self._candle_lows)
-            closes = list(self._candle_closes)
+            highs   = list(self._candle_highs)
+            lows    = list(self._candle_lows)
+            closes  = list(self._candle_closes)
+            volumes = list(self._candle_volumes)
 
         count = min(len(highs), len(lows), len(closes))
         if count == 0:
             return []
 
         candles = [
-            {"high": highs[i], "low": lows[i], "close": closes[i]}
+            {
+                "high":   highs[i],
+                "low":    lows[i],
+                "close":  closes[i],
+                "volume": volumes[i] if i < len(volumes) else 0,
+            }
             for i in range(count)
         ]
-        # return the most recent n candles
         return candles[-n:] if len(candles) >= n else candles
+
+    def get_candle_volumes(self, n: int = 20) -> list:
+        """
+        NEW: Return the last N completed candle volumes as a plain list.
+        Used to seed the VolumeAccelerationTracker on startup.
+        """
+        with self._lock:
+            vols = list(self._candle_volumes)
+        return vols[-n:] if len(vols) >= n else vols
+
+    def get_elapsed_seconds(self) -> float:
+        """
+        NEW: Return seconds elapsed since current candle opened.
+        Used by the strategy to project intra-candle volume.
+        Returns 30.0 as a safe default if candle hasn't started yet.
+        """
+        with self._lock:
+            if self._candle_start is None:
+                return 30.0
+            elapsed = (datetime.utcnow() - self._candle_start).total_seconds()
+            return max(elapsed, 1.0)  # never return 0 to avoid division by zero
+
+    def get_candle_minute(self):
+        """
+        NEW: Return the current candle's minute boundary (datetime).
+        Used by the strategy's volume acceleration tracker.
+        """
+        with self._lock:
+            return self._candle_minute
 
     def candle_count(self) -> int:
         with self._lock:
@@ -251,17 +303,17 @@ class SymbolCache:
         self.atr        = None
         self.rsi        = None
         self.vwap       = None
-        self.high       = None    # intraday high
-        self.low        = None    # intraday low
-        self.prev_high  = None    # previous session high (for PA signal)
-        self.prev_low   = None    # previous session low
+        self.high       = None
+        self.low        = None
+        self.prev_high  = None
+        self.prev_low   = None
 
         # tick-based buffers
         self._closes        = deque(maxlen=200)
         self._intra_prices  = deque(maxlen=5000)
         self._intra_volumes = deque(maxlen=5000)
 
-        # candle builder for ATR
+        # candle builder for ATR + volume tracking
         self._candles = CandleBuilder(atr_period=ATR_PERIOD)
 
         self._lock = threading.Lock()
@@ -269,35 +321,29 @@ class SymbolCache:
     def seed_from_bars(self, bars: list):
         """
         Seed all indicators from historical 5-min bar data on startup.
-        Gives the bot valid indicators before the first tick arrives.
         """
         if not bars:
             log.warning(f"[STREAM] No bars to seed {self.symbol}")
             return
 
-        closes = [b["c"] for b in bars]
-        highs  = [b["h"] for b in bars]
-        lows   = [b["l"] for b in bars]
-        vols   = [b["v"] for b in bars]
+        closes  = [b["c"] for b in bars]
+        highs   = [b["h"] for b in bars]
+        lows    = [b["l"] for b in bars]
+        vols    = [b["v"] for b in bars]
 
         with self._lock:
-            # seed tick buffers with bar closes
             self._closes.extend(closes)
-
-            # seed indicators
             self.ema9  = _ema(closes, 9)
             self.ema21 = _ema(closes, 21)
             self.rsi   = _rsi(closes)
             self.vwap  = _vwap(closes, vols)
             self.price = closes[-1]
 
-            # price action context from last 20 bars
             self.high      = max(highs[-20:])
             self.low       = min(lows[-20:])
             self.prev_high = max(highs[-21:-1]) if len(highs) > 20 else self.high
             self.prev_low  = min(lows[-21:-1])  if len(lows) > 20  else self.low
 
-            # seed intraday VWAP with today's bars only
             today = datetime.utcnow().date()
             for b in bars:
                 bar_time = b.get("t", "")
@@ -305,13 +351,10 @@ class SymbolCache:
                     self._intra_prices.append(b["c"])
                     self._intra_volumes.append(b["v"])
 
-            # mark freshly seeded so staleness check passes immediately
             self.updated_at = datetime.utcnow()
 
-        # seed candle builder with bar OHLC so ATR is available from minute 1
-        self._candles.seed_from_bars(highs, lows, closes)
-
-        # calculate initial ATR from seeded candles
+        # seed candle builder WITH volumes for acceleration tracker
+        self._candles.seed_from_bars(highs, lows, closes, vols)
         self.atr = self._candles.get_atr()
 
         log.info(
@@ -322,51 +365,38 @@ class SymbolCache:
         )
 
     def on_tick(self, price: float, volume: int, ts: datetime):
-        """
-        Process one trade tick.
-        - Updates EMA, RSI, VWAP every tick (fast)
-        - Updates ATR only when a 1-minute candle closes (accurate)
-        """
+        """Process one trade tick."""
         with self._lock:
             self.price      = price
             self.volume     = volume
             self.updated_at = datetime.utcnow()
 
-            # tick buffers
             self._closes.append(price)
             self._intra_prices.append(price)
             self._intra_volumes.append(volume if volume > 0 else 1)
 
             closes = list(self._closes)
 
-            # EMA — every tick
             if len(closes) >= 9:
                 self.ema9 = _ema(closes, 9)
             if len(closes) >= 21:
                 self.ema21 = _ema(closes, 21)
-
-            # RSI — every tick
             if len(closes) >= 15:
                 self.rsi = _rsi(closes)
 
-            # VWAP — every tick
             ip = list(self._intra_prices)
             iv = list(self._intra_volumes)
             if ip:
                 self.vwap = _vwap(ip, iv)
 
-            # intraday high/low tracking
             if self.high is None or price > self.high:
                 self.high = price
             if self.low is None or price < self.low:
                 self.low = price
 
-        # candle builder is thread-safe internally — call outside main lock
-        # to avoid nested locking. Returns True when a candle just closed.
-        candle_closed = self._candles.on_tick(price, ts)
+        candle_closed = self._candles.on_tick(price, volume, ts)
 
         if candle_closed:
-            # new 1-min candle closed — recalculate ATR from real OHLC data
             new_atr = self._candles.get_atr()
             with self._lock:
                 self.atr = new_atr
@@ -377,12 +407,20 @@ class SymbolCache:
             )
 
     def get_candles(self, n: int = 10) -> list:
-        """
-        Return the last N completed 1-minute candles.
-        Each candle is a dict with keys: high, low, close.
-        Delegates to the candle builder.
-        """
+        """Return the last N completed 1-minute candles."""
         return self._candles.get_candles(n)
+
+    def get_candle_volumes(self, n: int = 20) -> list:
+        """NEW: Return last N completed candle volumes for seeding vol tracker."""
+        return self._candles.get_candle_volumes(n)
+
+    def get_elapsed_seconds(self) -> float:
+        """NEW: Seconds elapsed since current candle opened."""
+        return self._candles.get_elapsed_seconds()
+
+    def get_candle_minute(self):
+        """NEW: Current candle minute boundary datetime."""
+        return self._candles.get_candle_minute()
 
     def to_dict(self) -> dict:
         """Return a snapshot of current state for the strategy to read."""
@@ -431,7 +469,6 @@ class PriceStream:
         """
         Seed indicators from bars, then connect WebSocket in background.
         Blocks up to 20s for the stream to come live.
-        Falls back to seeded data if connection is slow.
         """
         log.info(f"[STREAM] Starting for {self.symbols}")
         self._seed_all()
@@ -445,16 +482,11 @@ class PriceStream:
             log.warning("[STREAM] WebSocket not ready after 20s — using seeded data")
 
     def stop(self):
-        """Gracefully shut down the stream."""
         self._running = False
         if self._ws:
             self._ws.close()
 
     def get_price(self, symbol: str) -> dict:
-        """
-        Get current price and all indicators for a symbol.
-        Returns None if symbol is not being tracked.
-        """
         symbol = symbol.upper()
         cache  = self._cache.get(symbol)
         if cache is None:
@@ -469,22 +501,49 @@ class PriceStream:
         return data is None or data["stale"]
 
     def get_candles(self, symbol: str, n: int = 10) -> list:
-        """
-        Return the last N completed 1-minute candles for a symbol.
-        Each candle is a dict with keys: high, low, close.
-        Used by the strategy for price action signal evaluation.
-        Returns empty list if symbol not tracked or no candles yet.
-        """
+        """Return last N completed 1-minute candles for a symbol."""
         symbol = symbol.upper()
         cache  = self._cache.get(symbol)
         if cache is None:
             return []
         return cache.get_candles(n)
 
+    def get_candle_volumes(self, symbol: str, n: int = 20) -> list:
+        """
+        NEW: Return last N completed candle volumes for a symbol.
+        Used to seed the strategy's volume acceleration tracker on startup.
+        """
+        symbol = symbol.upper()
+        cache  = self._cache.get(symbol)
+        if cache is None:
+            return []
+        return cache.get_candle_volumes(n)
+
+    def get_elapsed_seconds(self, symbol: str) -> float:
+        """
+        NEW: Return seconds elapsed since current candle started for a symbol.
+        Used by the strategy for intra-candle volume acceleration projection.
+        """
+        symbol = symbol.upper()
+        cache  = self._cache.get(symbol)
+        if cache is None:
+            return 30.0
+        return cache.get_elapsed_seconds()
+
+    def get_candle_minute(self, symbol: str):
+        """
+        NEW: Return the current candle minute boundary datetime for a symbol.
+        Used to feed the strategy's volume acceleration tracker.
+        """
+        symbol = symbol.upper()
+        cache  = self._cache.get(symbol)
+        if cache is None:
+            return None
+        return cache.get_candle_minute()
+
     # ── Bar seeding ───────────────────────────────────────────
 
     def _seed_all(self):
-        """Fetch historical bars for every symbol to seed indicators."""
         for symbol in self.symbols:
             try:
                 bars = self._fetch_bars(symbol)
@@ -493,10 +552,6 @@ class PriceStream:
                 log.error(f"[STREAM] Failed to seed {symbol}: {e}")
 
     def _fetch_bars(self, symbol: str) -> list:
-        """
-        Fetch recent 5-minute bars from Alpaca REST API.
-        5-min bars give realistic ATR — 1-min bars underestimate volatility.
-        """
         end   = datetime.utcnow()
         start = end - timedelta(hours=10)
 
@@ -513,7 +568,7 @@ class PriceStream:
                 "limit":     BAR_LIMIT,
                 "feed":      "iex",
             },
-            timeout=10,
+            timeout=15,
         )
         resp.raise_for_status()
         bars = resp.json().get("bars") or []
@@ -523,7 +578,6 @@ class PriceStream:
     # ── WebSocket loop ────────────────────────────────────────
 
     def _run_loop(self):
-        """Reconnect loop — keeps retrying if connection drops."""
         while self._running:
             try:
                 self._subscribed = False
@@ -536,7 +590,6 @@ class PriceStream:
                 time.sleep(RECONNECT_DELAY)
 
     def _connect(self):
-        """Open a single WebSocket connection."""
         log.info(f"[STREAM] Connecting to {WS_URL}")
         self._ws = websocket.WebSocketApp(
             WS_URL,
@@ -568,11 +621,9 @@ class PriceStream:
     def _handle_message(self, ws, msg: dict):
         t = msg.get("T")
 
-        # ── connection confirmed ──────────────────────────────
         if t == "success" and msg.get("msg") == "connected":
             log.info("[STREAM] Connected to Alpaca stream")
 
-        # ── authenticated — subscribe ─────────────────────────
         elif t == "success" and msg.get("msg") == "authenticated":
             log.info("[STREAM] Authenticated ✓ — subscribing")
             ws.send(json.dumps({
@@ -582,25 +633,20 @@ class PriceStream:
                 "bars":   [],
             }))
 
-        # ── subscription confirmed ────────────────────────────
         elif t == "subscription":
             trades = msg.get("trades", [])
             log.info(f"[STREAM] Subscribed ✓ — receiving trades for {trades}")
             self._subscribed = True
             self._ready.set()
 
-        # ── error ─────────────────────────────────────────────
         elif t == "error":
             code = msg.get("code")
             err  = msg.get("msg", "unknown")
             log.error(f"[STREAM] Error {code}: {err}")
             if code == 406:
-                # connection limit — old connection still alive on Alpaca's end
-                # close this one and let the reconnect loop retry in 10s
                 log.warning("[STREAM] Connection limit (406) — closing and retrying")
                 ws.close()
 
-        # ── trade tick ────────────────────────────────────────
         elif t == "t":
             symbol = msg.get("S", "").upper()
             price  = msg.get("p")
@@ -609,19 +655,15 @@ class PriceStream:
             if symbol not in self._cache or not price:
                 return
 
-            # parse timestamp from tick for candle builder
-            # Alpaca sends timestamps as ISO strings e.g. "2026-05-21T14:30:01Z"
             raw_ts = msg.get("t", "")
             try:
                 ts = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
-                # convert to naive UTC for consistency
                 ts = ts.replace(tzinfo=None)
             except Exception:
                 ts = datetime.utcnow()
 
             self._cache[symbol].on_tick(float(price), int(size), ts)
 
-        # ── anything else ─────────────────────────────────────
         else:
             if t is not None:
                 log.debug(f"[STREAM] Unhandled message type '{t}': {msg}")
