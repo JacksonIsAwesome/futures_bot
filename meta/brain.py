@@ -457,7 +457,7 @@ market. Be specific — reference actual prices and times from the bar data."""
                     "content-type":       "application/json"
                 },
                 json={
-                    "model":      "claude-sonnet-4-20250514",
+                    "model":      "claude-haiku-4-5-20251001",
                     "max_tokens": 1024,   # bumped up to handle richer analysis
                     "messages":   [{"role": "user", "content": prompt}]
                 },
