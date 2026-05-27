@@ -110,6 +110,23 @@ class AlphaBot:
         eod = now.replace(hour=15, minute=55, second=0, microsecond=0)
         return now >= eod
 
+    def _is_blackout(self) -> bool:
+        """
+        Returns True if trading is currently blocked by the time blackout window.
+        Configurable from the dashboard — BLACKOUT_ENABLED, BLACKOUT_START, BLACKOUT_END.
+        Example: 11:00–13:00 ET blocks the choppy midday dead zone.
+        """
+        enabled = int(get_config_override("BLACKOUT_ENABLED", 0))
+        if not enabled:
+            return False
+        now   = datetime.now(ET)
+        start = int(get_config_override("BLACKOUT_START", 11))
+        end   = int(get_config_override("BLACKOUT_END",   13))
+        if now.hour >= start and now.hour < end:
+            log.debug(f"[MAIN] Blackout active ({start}:00–{end}:00 ET) — no new entries")
+            return True
+        return False
+
     # ── Daily reset ───────────────────────────────────────────
 
     def _check_new_day(self):
@@ -150,6 +167,10 @@ class AlphaBot:
                 )
             else:
                 log.warning(f"[DATA] {symbol} data is stale — no ticks yet. Skipping.")
+            return
+
+        # ── Blackout window — block new entries during dead zone ─
+        if self._is_blackout():
             return
 
         # ── CHANGE 2a: Feed tick to volume acceleration tracker ──
