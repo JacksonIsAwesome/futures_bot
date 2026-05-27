@@ -41,10 +41,6 @@ class ExecutionEngine:
         Open a new position via Alpaca paper trading.
         qty = number of shares (fractional supported).
         Returns trade_id on success, None on failure.
-
-        Error handling:
-        - HTTPError: logs full Alpaca response body so we can see the exact reason
-        - Other exceptions: logs the raw exception
         """
         side = "buy" if signal.direction == "long" else "sell"
 
@@ -62,14 +58,11 @@ class ExecutionEngine:
                 json=order_payload,
                 timeout=10
             )
-
-            # raise immediately so we catch the HTTP error with full context
             r.raise_for_status()
 
             data       = r.json()
             fill_price = float(data.get("filled_avg_price") or signal.price)
 
-            # record in DB
             trade_id = open_trade(
                 symbol=signal.symbol,
                 side=signal.direction,
@@ -81,7 +74,6 @@ class ExecutionEngine:
                 signal_id=signal.signal_id
             )
 
-            # calculate leveraged exposure for logging
             exposure = fill_price * qty * config.SIMULATED_LEVERAGE
             log.info(
                 f"[EXEC] 🟢 OPEN {signal.direction.upper()} {signal.symbol} "
@@ -93,8 +85,6 @@ class ExecutionEngine:
             return trade_id
 
         except requests.exceptions.HTTPError as e:
-            # log the full Alpaca response body — tells us exactly why it failed
-            # e.g. "shorting not enabled", "insufficient buying power", etc.
             try:
                 alpaca_error = r.json()
             except Exception:
@@ -112,13 +102,15 @@ class ExecutionEngine:
     def exit_trade(self, trade_id: str, symbol: str,
                    current_price: float, reason: str):
         """
-        Close an existing position.
+        Close an existing position using DELETE /positions/{symbol}.
+
+        Uses Alpaca's close-position endpoint instead of placing a sell order.
+        This correctly handles fractional long positions without triggering
+        the 422 'fractional orders cannot be sold short' error.
 
         CRITICAL SAFETY CHECK: looks up actual open trade in DB
         before placing any order. Verifies trade_id matches.
-        Prevents phantom short/long mismatches entirely.
         """
-        # verify trade exists and matches before placing any order
         db_trade = get_open_trade_for_symbol(symbol)
 
         if db_trade is None:
@@ -139,17 +131,6 @@ class ExecutionEngine:
         qty         = db_trade["qty"]
         entry_price = db_trade["entry_price"]
 
-        # to close a long we sell; to close a short we buy back
-        close_side = "sell" if actual_side == "long" else "buy"
-
-        order_payload = {
-            "symbol":        symbol,
-            "qty":           str(round(qty, 2)),
-            "side":          close_side,
-            "type":          "market",
-            "time_in_force": "day"
-        }
-
         try:
             # cancel any existing open orders for this symbol first
             # bracket stop orders cause wash trade 403 errors on market exits
@@ -166,9 +147,11 @@ class ExecutionEngine:
             except Exception as cancel_err:
                 log.warning(f"[EXEC] Could not cancel existing orders for {symbol}: {cancel_err}")
 
-            r = self._session.post(
-                f"{ALPACA_TRADE_URL}/orders",
-                json=order_payload,
+            # use DELETE /positions/{symbol} — closes the full position at market
+            # handles fractional shares correctly for both longs and shorts
+            # avoids the 422 "fractional orders cannot be sold short" error
+            r = self._session.delete(
+                f"{ALPACA_TRADE_URL}/positions/{symbol}",
                 timeout=10
             )
             r.raise_for_status()
@@ -176,19 +159,15 @@ class ExecutionEngine:
             data       = r.json()
             fill_price = float(data.get("filled_avg_price") or current_price)
 
-            # calculate raw P&L
             if actual_side == "long":
                 raw_pnl = (fill_price - float(entry_price)) * qty
             else:
                 raw_pnl = (float(entry_price) - fill_price) * qty
 
-            # apply leverage multiplier to simulate futures behavior
             leveraged_pnl = raw_pnl * config.SIMULATED_LEVERAGE
 
-            # save to DB
             close_trade(trade_id, fill_price, reason)
 
-            # update P&L with leveraged amount
             from core.database import get_conn
             with get_conn() as conn:
                 cur = conn.cursor()
@@ -217,7 +196,7 @@ class ExecutionEngine:
             except Exception:
                 alpaca_error = r.text
             log.error(
-                f"[EXEC] Failed to exit {symbol} ({close_side} {qty:.2f} shares): "
+                f"[EXEC] Failed to exit {symbol} (close position): "
                 f"HTTP {r.status_code} — {alpaca_error}"
             )
             return None
