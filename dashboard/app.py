@@ -108,21 +108,32 @@ def get_config():
             overrides = {r['key']: r['value'] for r in cur.fetchall()}
 
         defaults = {
+            # ── Core strategy ─────────────────────────────────
             'MIN_SIGNAL_SCORE':   3,
+            'EMA_FAST':           9,
+            'EMA_SLOW':           21,
+            'RSI_OVERBOUGHT':     70,
+            'RSI_OVERSOLD':       30,
+            # ── v2 strategy signals ───────────────────────────
+            'ROC_PERIOD':         3,
+            'ROC_MIN_LONG':       0.08,
+            'ROC_MIN_SHORT':      -0.08,
+            'VWAP_DEV_MULT':      1.5,
+            'VOL_ACCEL_MULT':     1.8,
+            # ── Risk ──────────────────────────────────────────
             'SIMULATED_LEVERAGE': 10,
             'MAX_DAILY_LOSS_PCT': 0.30,
             'MAX_OPEN_TRADES':    7,
             'MAX_POSITION_PCT':   0.20,
-            'EMA_FAST':           9,
-            'EMA_SLOW':           21,
-            'VOLUME_SPIKE_MULT':  1.5,
-            'RSI_OVERBOUGHT':     70,
-            'RSI_OVERSOLD':       30,
             'ATR_STOP_MULT':      2.0,
             'ATR_TP_MULT':        4.0,
             'BREAKEVEN_ATR_MULT': 0.75,
             'STARTING_CAPITAL':   2000.0,
-            'CLOSE_EOD':          1,   # 1 = close at end of day, 0 = hold overnight
+            # ── Session controls ──────────────────────────────
+            'CLOSE_EOD':          1,    # 1 = close at EOD, 0 = hold overnight
+            'BLACKOUT_ENABLED':   0,    # 1 = block trades during blackout window
+            'BLACKOUT_START':     11,   # ET hour to start blackout (24h)
+            'BLACKOUT_END':       13,   # ET hour to end blackout (24h)
         }
         for k, v in overrides.items():
             if k in defaults:
