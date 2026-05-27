@@ -151,6 +151,21 @@ class ExecutionEngine:
         }
 
         try:
+            # cancel any existing open orders for this symbol first
+            # bracket stop orders cause wash trade 403 errors on market exits
+            try:
+                cancel_r = self._session.delete(
+                    f"{ALPACA_TRADE_URL}/orders",
+                    params={"symbol": symbol},
+                    timeout=5
+                )
+                if cancel_r.status_code not in (200, 204, 207):
+                    log.warning(f"[EXEC] Cancel orders for {symbol} returned {cancel_r.status_code}")
+                else:
+                    log.debug(f"[EXEC] Cancelled existing orders for {symbol}")
+            except Exception as cancel_err:
+                log.warning(f"[EXEC] Could not cancel existing orders for {symbol}: {cancel_err}")
+
             r = self._session.post(
                 f"{ALPACA_TRADE_URL}/orders",
                 json=order_payload,
