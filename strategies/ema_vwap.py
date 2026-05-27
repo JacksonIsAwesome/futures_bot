@@ -176,9 +176,10 @@ class VolumeAccelerationTracker:
         """
         if symbol not in self._history:
             self._history[symbol] = deque(maxlen=self._window)
+        if symbol not in self._current:
             self._current[symbol] = (candle_minute, 0)
-
-        cur_minute, cur_vol = self._current[symbol]
+          
+        cur_minute, cur_vol = self._current.get(symbol, (None, 0))
 
         if candle_minute > cur_minute:
             # new candle started — archive the completed candle's volume
