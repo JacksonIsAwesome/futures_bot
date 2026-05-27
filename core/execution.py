@@ -212,22 +212,23 @@ class ExecutionEngine:
             return None
 
     def close_all_positions(self, reason="eod"):
+        """Close all open positions — used at end of day or shutdown."""
         open_trades = get_open_trades()
         if not open_trades:
             return
         for trade in open_trades:
-            # get actual current price instead of entry price
             symbol = trade["symbol"]
-            current_price = self._data.get_price(symbol)
-        if current_price is None:
-            current_price = float(trade["entry_price"])  # fallback only
-        self.exit_trade(
-            trade["id"],
-            symbol,
-            current_price,
-            reason
-        )
-    log.info(f"[EXEC] All positions closed ({reason})")
+            cache = self._data.get_price(symbol)
+            current_price = cache.get("price") if cache else None
+            if current_price is None:
+                current_price = float(trade["entry_price"])
+            self.exit_trade(
+                trade["id"],
+                symbol,
+                current_price,
+                reason
+            )
+        log.info(f"[EXEC] All positions closed ({reason})")
 
     def get_account(self):
         """Returns Alpaca account info."""
