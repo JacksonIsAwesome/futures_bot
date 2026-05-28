@@ -120,6 +120,7 @@ def get_config():
             'VOL_ACCEL_MULT':     1.8,
             # ── Flip confirmation ─────────────────────────────
             'FLIP_MIN_SIGNALS':   1,
+            'FLIP_ENABLED':       1,
             # ── Risk ──────────────────────────────────────────
             'SIMULATED_LEVERAGE': 10,
             'MAX_DAILY_LOSS_PCT': 0.30,
