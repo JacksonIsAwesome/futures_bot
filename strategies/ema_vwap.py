@@ -484,7 +484,14 @@ class EMAVWAPStrategy:
             rsi_confirm=rsi_ok,
             price_action=dev_ok,
             price=price,
-            atr=atr
+            atr=atr,
+            roc_confirm=roc_ok,
+            macd_confirm=macd_ok,
+            candle_confirm=candle_ok,
+            mtf_ok=mtf_ok,
+            momentum_score=momentum_score,
+            roc_value=roc_value,
+            macd_histogram=macd_hist
         )
 
         signal = Signal(
