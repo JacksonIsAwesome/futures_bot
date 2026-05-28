@@ -190,16 +190,26 @@ class ExecutionEngine:
             )
             return leveraged_pnl
 
-        except requests.exceptions.HTTPError as e:
-            try:
-                alpaca_error = r.json()
-            except Exception:
-                alpaca_error = r.text
-            log.error(
-                f"[EXEC] Failed to exit {symbol} (close position): "
-                f"HTTP {r.status_code} — {alpaca_error}"
-            )
-            return None
+            except requests.exceptions.HTTPError as e:
+                try:
+                    alpaca_error = r.json()
+                except Exception:
+                    alpaca_error = r.text
+
+                if r.status_code == 404:
+                    # Position doesn't exist in Alpaca — close it in DB anyway
+                    log.warning(
+                        f"[EXEC] {symbol} not found in Alpaca (404) — "
+                        f"closing DB trade {trade_id} as orphan"
+                    )
+                    close_trade(trade_id, float(entry_price), "orphan_404")
+                    return 0.0
+
+                log.error(
+                    f"[EXEC] Failed to exit {symbol} (close position): "
+                    f"HTTP {r.status_code} — {alpaca_error}"
+                )
+                return None
 
         except Exception as e:
             log.error(f"[EXEC] Failed to exit {symbol}: {e}")
