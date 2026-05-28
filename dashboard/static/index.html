@@ -7,94 +7,92 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  :root {
-    --navy-darkest: #060d1f; --navy-dark: #0a1628; --navy-mid: #0f2040;
-    --navy-light: #162d55; --navy-accent: #1e3d72; --blue-bright: #2563eb;
-    --blue-glow: #3b82f6; --cyan: #06b6d4; --green: #10b981; --red: #ef4444;
-    --amber: #f59e0b; --text-primary: #e8edf8; --text-secondary: #8ba3c7;
-    --text-muted: #4a6080; --border: rgba(255,255,255,0.07);
-    --border-bright: rgba(255,255,255,0.12); --card-bg: rgba(255,255,255,0.04);
-    --card-hover: rgba(255,255,255,0.06);
-  }
-  body { font-family: 'SF Mono','JetBrains Mono','Fira Code',monospace; background: var(--navy-darkest); color: var(--text-primary); min-height: 100vh; font-size: 13px; }
-  .header { background: var(--navy-dark); border-bottom: 1px solid var(--border); padding: 0 24px; display: flex; align-items: center; justify-content: space-between; height: 56px; position: sticky; top: 0; z-index: 100; }
-  .logo { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 600; letter-spacing: 0.05em; }
-  .logo-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-  .header-right { display: flex; align-items: center; gap: 16px; font-size: 12px; }
-  .status-badge { display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 20px; border: 1px solid var(--border-bright); background: var(--card-bg); }
-  .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
-  .tabs { background: var(--navy-dark); border-bottom: 1px solid var(--border); padding: 0 24px; display: flex; }
-  .tab { padding: 14px 20px; cursor: pointer; color: var(--text-muted); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; border-bottom: 2px solid transparent; transition: all 0.15s; display: flex; align-items: center; gap: 7px; }
-  .tab:hover { color: var(--text-secondary); }
-  .tab.active { color: var(--blue-glow); border-bottom-color: var(--blue-glow); }
-  .content { padding: 24px; display: none; }
-  .content.active { display: block; }
-  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(160px,1fr)); gap: 12px; margin-bottom: 24px; }
-  .stat-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 16px; transition: border-color 0.15s; }
-  .stat-card:hover { border-color: var(--border-bright); }
-  .stat-label { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
-  .stat-value { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
-  .stat-value.green { color: var(--green); } .stat-value.red { color: var(--red); } .stat-value.cyan { color: var(--cyan); }
-  .stat-sub { font-size: 10px; color: var(--text-muted); margin-top: 4px; }
-  .panel { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 16px; overflow: hidden; }
-  .panel-header { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
-  .panel-title { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-secondary); display: flex; align-items: center; gap: 8px; }
-  .panel-body { padding: 16px 18px; }
-  .data-table { width: 100%; border-collapse: collapse; }
-  .data-table th { text-align: left; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); padding: 8px 12px; border-bottom: 1px solid var(--border); font-weight: 400; }
-  .data-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: 12px; }
-  .data-table tr:last-child td { border-bottom: none; }
-  .data-table tr:hover td { background: var(--card-hover); }
-  .badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 500; letter-spacing: 0.05em; }
-  .badge-long { background: rgba(16,185,129,0.15); color: var(--green); }
-  .badge-short { background: rgba(239,68,68,0.15); color: var(--red); }
-  .badge-open { background: rgba(59,130,246,0.15); color: var(--blue-glow); }
-  .badge-closed { background: rgba(139,163,199,0.15); color: var(--text-secondary); }
-  .badge-stopped { background: rgba(245,158,11,0.15); color: var(--amber); }
-  .sig-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 2px; }
-  .sig-dot.on { background: var(--green); } .sig-dot.off { background: var(--text-muted); }
-  .score-bar { display: flex; gap: 3px; align-items: center; }
-  .score-pip { width: 14px; height: 5px; border-radius: 2px; background: var(--text-muted); }
-  .score-pip.filled { background: var(--blue-glow); }
-  .controls-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
-  .control-group { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 18px; }
-  .control-group h3 { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 16px; }
-  .control-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; gap: 12px; }
-  .control-label { font-size: 12px; color: var(--text-secondary); flex: 1; min-width: 0; }
-  .control-hint { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
-  .control-value { font-size: 12px; color: var(--cyan); font-weight: 600; min-width: 48px; text-align: right; }
-  input[type="range"] { -webkit-appearance: none; width: 110px; height: 4px; background: var(--navy-accent); border-radius: 2px; outline: none; flex-shrink: 0; }
-  input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--blue-bright); cursor: pointer; border: 2px solid var(--navy-darkest); }
-  .save-btn { background: var(--blue-bright); color: white; border: none; padding: 10px 24px; border-radius: 6px; font-size: 12px; font-family: inherit; letter-spacing: 0.05em; cursor: pointer; transition: opacity 0.15s; }
-  .save-btn:hover { opacity: 0.85; }
-  .toggle-switch { position: relative; display: inline-block; width: 42px; height: 22px; cursor: pointer; flex-shrink: 0; }
-  .toggle-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
-  .toggle-track { position: absolute; inset: 0; border-radius: 22px; background: var(--navy-accent); border: 1px solid var(--border-bright); transition: background 0.2s; }
-  .toggle-thumb { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--text-muted); transition: left 0.2s, background 0.2s; pointer-events: none; }
-  .toggle-switch input:checked + .toggle-track { background: var(--blue-bright); }
-  .toggle-switch input:checked + .toggle-track .toggle-thumb { left: 22px; background: white; }
-  .session-panel { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 18px; margin-bottom: 16px; }
-  .session-panel h3 { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 16px; }
-  .session-row { display: flex; align-items: center; gap: 16px; margin-bottom: 14px; flex-wrap: wrap; }
-  .session-label { font-size: 12px; color: var(--text-secondary); min-width: 200px; }
-  .blackout-inputs { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary); }
-  .blackout-inputs input[type="number"] { width: 52px; background: var(--navy-mid); border: 1px solid var(--border-bright); border-radius: 4px; color: var(--cyan); font-family: inherit; font-size: 12px; padding: 4px 8px; text-align: center; outline: none; }
-  .blackout-inputs input[type="number"]:focus { border-color: var(--blue-glow); }
-  .log-container { background: var(--navy-darkest); border: 1px solid var(--border); border-radius: 8px; padding: 16px; height: 500px; overflow-y: auto; font-family: 'SF Mono',monospace; font-size: 11px; line-height: 1.8; }
-  .log-entry { display: flex; gap: 12px; }
-  .log-time { color: var(--text-muted); white-space: nowrap; }
-  .log-level-info { color: var(--blue-glow); }
-  .log-msg { color: var(--text-secondary); }
-  .log-msg.highlight { color: var(--green); }
-  .chart-wrap { position: relative; width: 100%; height: 200px; }
-  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  .empty-state { text-align: center; color: var(--text-muted); padding: 40px; font-size: 12px; }
-  .refresh-btn { background: none; border: 1px solid var(--border); color: var(--text-muted); padding: 4px 10px; border-radius: 4px; font-size: 11px; font-family: inherit; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.15s; }
-  .refresh-btn:hover { border-color: var(--border-bright); color: var(--text-secondary); }
-  .divider { height: 1px; background: var(--border); margin: 16px 0; }
-  @media (max-width:700px) { .controls-grid{grid-template-columns:1fr} .two-col{grid-template-columns:1fr} .stats-grid{grid-template-columns:1fr 1fr} }
+* { margin:0; padding:0; box-sizing:border-box; }
+:root {
+  --navy-darkest:#060d1f; --navy-dark:#0a1628; --navy-mid:#0f2040;
+  --navy-light:#162d55; --navy-accent:#1e3d72; --blue-bright:#2563eb;
+  --blue-glow:#3b82f6; --cyan:#06b6d4; --green:#10b981; --red:#ef4444;
+  --amber:#f59e0b; --text-primary:#e8edf8; --text-secondary:#8ba3c7;
+  --text-muted:#4a6080; --border:rgba(255,255,255,0.07);
+  --border-bright:rgba(255,255,255,0.12); --card-bg:rgba(255,255,255,0.04);
+  --card-hover:rgba(255,255,255,0.06);
+}
+body { font-family:'SF Mono','JetBrains Mono','Fira Code',monospace; background:var(--navy-darkest); color:var(--text-primary); min-height:100vh; font-size:13px; }
+.header { background:var(--navy-dark); border-bottom:1px solid var(--border); padding:0 24px; display:flex; align-items:center; justify-content:space-between; height:56px; position:sticky; top:0; z-index:100; }
+.logo { display:flex; align-items:center; gap:10px; font-size:15px; font-weight:600; letter-spacing:0.05em; }
+.logo-dot { width:8px; height:8px; border-radius:50%; background:var(--green); animation:pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+.header-right { display:flex; align-items:center; gap:16px; font-size:12px; }
+.status-badge { display:flex; align-items:center; gap:6px; padding:4px 10px; border-radius:20px; border:1px solid var(--border-bright); background:var(--card-bg); }
+.status-dot { width:6px; height:6px; border-radius:50%; background:var(--green); animation:pulse 2s infinite; }
+.tabs { background:var(--navy-dark); border-bottom:1px solid var(--border); padding:0 24px; display:flex; }
+.tab { padding:14px 20px; cursor:pointer; color:var(--text-muted); font-size:12px; letter-spacing:0.06em; text-transform:uppercase; border-bottom:2px solid transparent; transition:all 0.15s; display:flex; align-items:center; gap:7px; }
+.tab:hover { color:var(--text-secondary); }
+.tab.active { color:var(--blue-glow); border-bottom-color:var(--blue-glow); }
+.content { padding:24px; display:none; }
+.content.active { display:block; }
+.stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:24px; }
+.stat-card { background:var(--card-bg); border:1px solid var(--border); border-radius:10px; padding:16px; transition:border-color 0.15s; }
+.stat-card:hover { border-color:var(--border-bright); }
+.stat-label { font-size:10px; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-muted); margin-bottom:8px; }
+.stat-value { font-size:22px; font-weight:600; letter-spacing:-0.02em; }
+.stat-value.green{color:var(--green)} .stat-value.red{color:var(--red)} .stat-value.cyan{color:var(--cyan)}
+.stat-sub { font-size:10px; color:var(--text-muted); margin-top:4px; }
+.panel { background:var(--card-bg); border:1px solid var(--border); border-radius:10px; margin-bottom:16px; overflow:hidden; }
+.panel-header { padding:14px 18px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
+.panel-title { font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-secondary); display:flex; align-items:center; gap:8px; }
+.panel-body { padding:16px 18px; }
+.data-table { width:100%; border-collapse:collapse; }
+.data-table th { text-align:left; font-size:10px; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-muted); padding:8px 12px; border-bottom:1px solid var(--border); font-weight:400; }
+.data-table td { padding:10px 12px; border-bottom:1px solid var(--border); color:var(--text-secondary); font-size:12px; }
+.data-table tr:last-child td { border-bottom:none; }
+.data-table tr:hover td { background:var(--card-hover); }
+.badge { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:4px; font-size:10px; font-weight:500; letter-spacing:0.05em; }
+.badge-long{background:rgba(16,185,129,0.15);color:var(--green)} .badge-short{background:rgba(239,68,68,0.15);color:var(--red)}
+.badge-open{background:rgba(59,130,246,0.15);color:var(--blue-glow)} .badge-closed{background:rgba(139,163,199,0.15);color:var(--text-secondary)}
+.badge-stopped{background:rgba(245,158,11,0.15);color:var(--amber)}
+.score-bar { display:flex; gap:3px; align-items:center; }
+.score-pip { width:14px; height:5px; border-radius:2px; background:var(--text-muted); }
+.score-pip.filled { background:var(--blue-glow); }
+
+/* Controls layout */
+.ctrls-row { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px; }
+.ctrls-row.single { grid-template-columns:1fr; }
+.ctrl-group { background:var(--card-bg); border:1px solid var(--border); border-radius:10px; padding:18px; }
+.ctrl-group h3 { font-size:10px; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-muted); margin-bottom:16px; display:flex; align-items:center; gap:8px; }
+.ctrl-group h3 .badge-group { font-size:9px; padding:1px 6px; border-radius:3px; background:rgba(59,130,246,0.15); color:var(--blue-glow); letter-spacing:0.05em; text-transform:none; }
+.ctrl-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; gap:12px; }
+.ctrl-row:last-child { margin-bottom:0; }
+.ctrl-label { font-size:12px; color:var(--text-secondary); flex:1; min-width:0; }
+.ctrl-hint { font-size:10px; color:var(--text-muted); margin-top:2px; }
+.ctrl-val { font-size:12px; color:var(--cyan); font-weight:600; min-width:44px; text-align:right; }
+input[type="range"] { -webkit-appearance:none; width:110px; height:4px; background:var(--navy-accent); border-radius:2px; outline:none; flex-shrink:0; }
+input[type="range"]::-webkit-slider-thumb { -webkit-appearance:none; width:14px; height:14px; border-radius:50%; background:var(--blue-bright); cursor:pointer; border:2px solid var(--navy-darkest); }
+input[type="range"].disabled-slider { opacity:0.3; pointer-events:none; }
+.save-btn { background:var(--blue-bright); color:white; border:none; padding:10px 24px; border-radius:6px; font-size:12px; font-family:inherit; letter-spacing:0.05em; cursor:pointer; transition:opacity 0.15s; }
+.save-btn:hover { opacity:0.85; }
+.toggle-switch { position:relative; display:inline-block; width:42px; height:22px; cursor:pointer; flex-shrink:0; }
+.toggle-switch input { opacity:0; width:0; height:0; position:absolute; }
+.toggle-track { position:absolute; inset:0; border-radius:22px; background:var(--navy-accent); border:1px solid var(--border-bright); transition:background 0.2s; }
+.toggle-thumb { position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:var(--text-muted); transition:left 0.2s,background 0.2s; pointer-events:none; }
+.toggle-switch input:checked + .toggle-track { background:var(--blue-bright); }
+.toggle-switch input:checked + .toggle-track .toggle-thumb { left:22px; background:white; }
+.divider { height:1px; background:var(--border); margin:14px 0; }
+.dimmed { opacity:0.35; pointer-events:none; }
+input[type="number"].num-input { width:52px; background:var(--navy-mid); border:1px solid var(--border-bright); border-radius:4px; color:var(--cyan); font-family:inherit; font-size:12px; padding:4px 8px; text-align:center; outline:none; }
+input[type="number"].num-input:focus { border-color:var(--blue-glow); }
+.log-container { background:var(--navy-darkest); border:1px solid var(--border); border-radius:8px; padding:16px; height:500px; overflow-y:auto; font-size:11px; line-height:1.8; }
+.log-entry { display:flex; gap:12px; }
+.log-time { color:var(--text-muted); white-space:nowrap; }
+.log-level-info { color:var(--blue-glow); }
+.log-msg { color:var(--text-secondary); }
+.log-msg.highlight { color:var(--green); }
+.chart-wrap { position:relative; width:100%; height:200px; }
+.two-col { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.empty-state { text-align:center; color:var(--text-muted); padding:40px; font-size:12px; }
+.refresh-btn { background:none; border:1px solid var(--border); color:var(--text-muted); padding:4px 10px; border-radius:4px; font-size:11px; font-family:inherit; cursor:pointer; display:flex; align-items:center; gap:5px; transition:all 0.15s; }
+.refresh-btn:hover { border-color:var(--border-bright); color:var(--text-secondary); }
+@media(max-width:700px){.ctrls-row{grid-template-columns:1fr}.two-col{grid-template-columns:1fr}.stats-grid{grid-template-columns:1fr 1fr}}
 </style>
 </head>
 <body>
@@ -124,7 +122,7 @@
   </div>
   <div class="panel">
     <div class="panel-header"><div class="panel-title"><i class="ti ti-activity"></i> Open Positions</div><button class="refresh-btn" onclick="loadOverview()"><i class="ti ti-refresh"></i> Refresh</button></div>
-    <div class="panel-body" style="padding:0"><table class="data-table"><thead><tr><th>Symbol</th><th>Side</th><th>Entry</th><th>Stop</th><th>Target</th><th>Unrealized P&L</th><th>Score</th></tr></thead><tbody id="open-trades-body"><tr><td colspan="7" class="empty-state">No open positions</td></tr></tbody></table></div>
+    <div class="panel-body" style="padding:0"><table class="data-table"><thead><tr><th>Symbol</th><th>Side</th><th>Entry</th><th>Stop</th><th>Target</th><th>P&L</th><th>Score</th></tr></thead><tbody id="open-trades-body"><tr><td colspan="7" class="empty-state">No open positions</td></tr></tbody></table></div>
   </div>
   <div class="panel">
     <div class="panel-header"><div class="panel-title"><i class="ti ti-history"></i> Recent Closed Trades</div></div>
@@ -136,133 +134,251 @@
 <div id="tab-signals" class="content">
   <div class="panel">
     <div class="panel-header"><div class="panel-title"><i class="ti ti-radar"></i> Signal Log — Last 100</div><button class="refresh-btn" onclick="loadSignals()"><i class="ti ti-refresh"></i> Refresh</button></div>
-    <div class="panel-body" style="padding:0"><table class="data-table"><thead><tr><th>Time</th><th>Symbol</th><th>Direction</th><th>Score</th><th>EMA</th><th>VWAP</th><th>VOL</th><th>RSI</th><th>DEV</th><th>ROC</th><th>Traded</th></tr></thead><tbody id="signals-body"><tr><td colspan="11" class="empty-state">No signals yet</td></tr></tbody></table></div>
+    <div class="panel-body" style="padding:0"><table class="data-table"><thead><tr><th>Time</th><th>Symbol</th><th>Direction</th><th>Base</th><th>EMA</th><th>VWAP</th><th>VOL</th><th>RSI</th><th>DEV</th><th>Traded</th></tr></thead><tbody id="signals-body"><tr><td colspan="10" class="empty-state">No signals yet</td></tr></tbody></table></div>
   </div>
 </div>
 
 <!-- CONTROLS -->
 <div id="tab-controls" class="content">
-  <div style="margin-bottom:16px;color:var(--text-muted);font-size:11px;letter-spacing:0.05em;">Changes save to the database and take effect on the bot's next scan cycle (~5 seconds).</div>
-  <div class="controls-grid">
-    <!-- Strategy -->
-    <div class="control-group">
-      <h3>Strategy — Anticipation Signals</h3>
-      <div class="control-row">
-        <div><div class="control-label">Min signal score</div><div class="control-hint">Signals needed to fire a trade (out of 6)</div></div>
-        <input type="range" min="2" max="6" step="1" id="ctrl-MIN_SIGNAL_SCORE" oninput="updateVal(this)">
-        <div class="control-value" id="val-MIN_SIGNAL_SCORE">3</div>
+  <div style="margin-bottom:16px;color:var(--text-muted);font-size:11px">Changes save to the database and take effect on the bot's next scan cycle (~5 seconds). Meta brain has access to all settings.</div>
+
+  <!-- Row 1: Base Strategy + Risk -->
+  <div class="ctrls-row">
+    <div class="ctrl-group">
+      <h3><i class="ti ti-chart-bar"></i> Base Signals <span class="badge-group">need 4 of 5</span></h3>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">Prime time score (9:30–11am)</div><div class="ctrl-hint">Lower bar during peak momentum hours</div></div>
+        <input type="range" min="2" max="5" step="1" id="ctrl-PRIME_BASE_MIN" oninput="updateVal(this)">
+        <div class="ctrl-val" id="val-PRIME_BASE_MIN">3</div>
       </div>
-      <div class="control-row">
-        <div><div class="control-label">ROC min long %</div><div class="control-hint">Price must rise X% over 3 candles to confirm long</div></div>
-        <input type="range" min="0.02" max="0.30" step="0.01" id="ctrl-ROC_MIN_LONG" oninput="updateVal(this)">
-        <div class="control-value" id="val-ROC_MIN_LONG">0.08</div>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">Regular session score</div><div class="ctrl-hint">Higher bar during choppy midday/afternoon</div></div>
+        <input type="range" min="2" max="5" step="1" id="ctrl-REGULAR_BASE_MIN" oninput="updateVal(this)">
+        <div class="ctrl-val" id="val-REGULAR_BASE_MIN">4</div>
       </div>
-      <div class="control-row">
-        <div><div class="control-label">ROC min short %</div><div class="control-hint">Price must fall X% over 3 candles to confirm short</div></div>
-        <input type="range" min="-0.30" max="-0.02" step="0.01" id="ctrl-ROC_MIN_SHORT" oninput="updateVal(this)">
-        <div class="control-value" id="val-ROC_MIN_SHORT">-0.08</div>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">Prime time ends</div><div class="ctrl-hint">Hour (ET) when prime score switches to regular</div></div>
+        <input type="range" min="10" max="13" step="1" id="ctrl-PRIME_END_HOUR" oninput="updateVal(this)">
+        <div class="ctrl-val" id="val-PRIME_END_HOUR">11</div>
       </div>
-      <div class="control-row">
-        <div><div class="control-label">VWAP deviation mult</div><div class="control-hint">Std devs from VWAP for breakout signal</div></div>
+      <div class="divider"></div>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">VWAP deviation mult</div><div class="ctrl-hint">Std devs from VWAP needed for breakout signal</div></div>
         <input type="range" min="0.5" max="3.0" step="0.1" id="ctrl-VWAP_DEV_MULT" oninput="updateVal(this)">
-        <div class="control-value" id="val-VWAP_DEV_MULT">1.5</div>
+        <div class="ctrl-val" id="val-VWAP_DEV_MULT">1.5</div>
       </div>
-      <div class="control-row">
-        <div><div class="control-label">Vol acceleration mult</div><div class="control-hint">Projected candle volume must be X times average</div></div>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">Vol acceleration mult</div><div class="ctrl-hint">Projected candle volume must be X× avg</div></div>
         <input type="range" min="1.0" max="4.0" step="0.1" id="ctrl-VOL_ACCEL_MULT" oninput="updateVal(this)">
-        <div class="control-value" id="val-VOL_ACCEL_MULT">1.8</div>
+        <div class="ctrl-val" id="val-VOL_ACCEL_MULT">1.8</div>
       </div>
-      <div class="divider"></div>
-      <div class="control-row">
-        <div><div class="control-label">Direction flip</div><div class="control-hint">Exit current position when signals reverse direction</div></div>
-        <label class="toggle-switch">
-          <input type="checkbox" id="ctrl-FLIP_ENABLED" onchange="toggleBool(this,'FLIP_ENABLED'); updateFlipState()">
-          <span class="toggle-track"><span class="toggle-thumb"></span></span>
-        </label>
-      </div>
-      <div id="flip-signals-row" class="control-row">
-        <div><div class="control-label">Flip confirmation signals</div><div class="control-hint">Signals needed in new direction before re-entering (1 = instant)</div></div>
-        <input type="range" min="1" max="5" step="1" id="ctrl-FLIP_MIN_SIGNALS" oninput="updateVal(this)">
-        <div class="control-value" id="val-FLIP_MIN_SIGNALS">1</div>
-      </div>
-      <div class="divider"></div>
-      <div class="control-row">
-        <div class="control-label">RSI overbought</div>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">RSI overbought</div></div>
         <input type="range" min="60" max="85" step="1" id="ctrl-RSI_OVERBOUGHT" oninput="updateVal(this)">
-        <div class="control-value" id="val-RSI_OVERBOUGHT">70</div>
+        <div class="ctrl-val" id="val-RSI_OVERBOUGHT">70</div>
       </div>
-      <div class="control-row">
-        <div class="control-label">RSI oversold</div>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">RSI oversold</div></div>
         <input type="range" min="15" max="40" step="1" id="ctrl-RSI_OVERSOLD" oninput="updateVal(this)">
-        <div class="control-value" id="val-RSI_OVERSOLD">30</div>
+        <div class="ctrl-val" id="val-RSI_OVERSOLD">30</div>
       </div>
     </div>
-    <!-- Risk -->
-    <div class="control-group">
-      <h3>Risk</h3>
-      <div class="control-row">
-        <div class="control-label">Simulated leverage</div>
-        <input type="range" min="1" max="20" step="1" id="ctrl-SIMULATED_LEVERAGE" oninput="updateVal(this)">
-        <div class="control-value" id="val-SIMULATED_LEVERAGE">10x</div>
+    <div class="ctrl-group">
+      <h3><i class="ti ti-shield"></i> Risk</h3>
+      <div class="ctrl-row">
+        <div class="ctrl-label">Simulated leverage</div>
+        <input type="range" min="1" max="20" step="1" id="ctrl-SIMULATED_LEVERAGE" oninput="updateVal(this,'x')">
+        <div class="ctrl-val" id="val-SIMULATED_LEVERAGE">10x</div>
       </div>
-      <div class="control-row">
-        <div class="control-label">Max daily loss %</div>
+      <div class="ctrl-row">
+        <div class="ctrl-label">Max daily loss %</div>
         <input type="range" min="5" max="50" step="1" id="ctrl-MAX_DAILY_LOSS_PCT_pct" oninput="updateValPct(this,'MAX_DAILY_LOSS_PCT')">
-        <div class="control-value" id="val-MAX_DAILY_LOSS_PCT">30%</div>
+        <div class="ctrl-val" id="val-MAX_DAILY_LOSS_PCT">30%</div>
       </div>
-      <div class="control-row">
-        <div class="control-label">Max open trades</div>
+      <div class="ctrl-row">
+        <div class="ctrl-label">Max open trades</div>
         <input type="range" min="1" max="10" step="1" id="ctrl-MAX_OPEN_TRADES" oninput="updateVal(this)">
-        <div class="control-value" id="val-MAX_OPEN_TRADES">7</div>
+        <div class="ctrl-val" id="val-MAX_OPEN_TRADES">7</div>
       </div>
-      <div class="control-row">
-        <div class="control-label">Max position size %</div>
+      <div class="ctrl-row">
+        <div class="ctrl-label">Max position size %</div>
         <input type="range" min="5" max="50" step="1" id="ctrl-MAX_POSITION_PCT_pct" oninput="updateValPct(this,'MAX_POSITION_PCT')">
-        <div class="control-value" id="val-MAX_POSITION_PCT">20%</div>
+        <div class="ctrl-val" id="val-MAX_POSITION_PCT">20%</div>
       </div>
-      <div class="control-row">
-        <div class="control-label">ATR stop multiplier</div>
+      <div class="ctrl-row">
+        <div class="ctrl-label">ATR stop multiplier</div>
         <input type="range" min="0.5" max="3.0" step="0.1" id="ctrl-ATR_STOP_MULT" oninput="updateVal(this)">
-        <div class="control-value" id="val-ATR_STOP_MULT">2.0</div>
+        <div class="ctrl-val" id="val-ATR_STOP_MULT">2.0</div>
       </div>
-      <div class="control-row">
-        <div class="control-label">ATR TP multiplier</div>
+      <div class="ctrl-row">
+        <div class="ctrl-label">ATR TP multiplier</div>
         <input type="range" min="1.0" max="6.0" step="0.1" id="ctrl-ATR_TP_MULT" oninput="updateVal(this)">
-        <div class="control-value" id="val-ATR_TP_MULT">4.0</div>
+        <div class="ctrl-val" id="val-ATR_TP_MULT">4.0</div>
       </div>
-      <div class="control-row">
-        <div class="control-label">Breakeven ATR mult</div>
+      <div class="ctrl-row">
+        <div class="ctrl-label">Breakeven ATR mult</div>
         <input type="range" min="0.25" max="2.0" step="0.05" id="ctrl-BREAKEVEN_ATR_MULT" oninput="updateVal(this)">
-        <div class="control-value" id="val-BREAKEVEN_ATR_MULT">0.75</div>
+        <div class="ctrl-val" id="val-BREAKEVEN_ATR_MULT">0.75</div>
       </div>
     </div>
   </div>
 
-  <!-- Session controls -->
-  <div class="session-panel">
-    <h3>Session Controls</h3>
-    <div class="session-row">
-      <div class="session-label">Close all positions at end of day (3:55pm ET)</div>
-      <label class="toggle-switch"><input type="checkbox" id="ctrl-CLOSE_EOD" onchange="toggleBool(this,'CLOSE_EOD')"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
-    </div>
-    <div class="divider"></div>
-    <div class="session-row">
-      <div class="session-label">Block trading during dead zone (choppy midday hours)</div>
-      <label class="toggle-switch"><input type="checkbox" id="ctrl-BLACKOUT_ENABLED" onchange="toggleBool(this,'BLACKOUT_ENABLED'); updateBlackoutState()"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
-    </div>
-    <div class="session-row" id="blackout-time-row" style="opacity:0.4;pointer-events:none">
-      <div class="session-label" style="color:var(--text-muted)">Blackout window (ET, 24h format)</div>
-      <div class="blackout-inputs">
-        <input type="number" id="ctrl-BLACKOUT_START" min="9" max="15" value="11" oninput="configState['BLACKOUT_START']=parseInt(this.value)">
-        <span>:00 ET to</span>
-        <input type="number" id="ctrl-BLACKOUT_END" min="9" max="16" value="13" oninput="configState['BLACKOUT_END']=parseInt(this.value)">
-        <span>:00 ET</span>
+  <!-- Row 2: Momentum Gate + MTF -->
+  <div class="ctrls-row">
+    <div class="ctrl-group">
+      <h3><i class="ti ti-rocket"></i> Momentum Gate <span class="badge-group">need 2 of 3</span></h3>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">Enable momentum gate</div><div class="ctrl-hint">Require ROC/MACD/CC confirmation on top of base score</div></div>
+        <label class="toggle-switch"><input type="checkbox" id="ctrl-MOMENTUM_GATE_ENABLED" onchange="toggleBool(this,'MOMENTUM_GATE_ENABLED'); dimSection('mom-controls',!this.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+      </div>
+      <div id="mom-controls">
+        <div class="ctrl-row">
+          <div><div class="ctrl-label">Confirmations required</div><div class="ctrl-hint">How many of ROC / MACD / Candle Consistency must hit</div></div>
+          <input type="range" min="1" max="3" step="1" id="ctrl-MOMENTUM_GATE_MIN" oninput="updateVal(this)">
+          <div class="ctrl-val" id="val-MOMENTUM_GATE_MIN">2</div>
+        </div>
+        <div class="divider"></div>
+        <div class="ctrl-row">
+          <div><div class="ctrl-label">ROC min long %</div><div class="ctrl-hint">Price must rise X% over 3 candles</div></div>
+          <input type="range" min="0.02" max="0.30" step="0.01" id="ctrl-ROC_MIN_LONG" oninput="updateVal(this)">
+          <div class="ctrl-val" id="val-ROC_MIN_LONG">0.08</div>
+        </div>
+        <div class="ctrl-row">
+          <div><div class="ctrl-label">ROC min short %</div></div>
+          <input type="range" min="-0.30" max="-0.02" step="0.01" id="ctrl-ROC_MIN_SHORT" oninput="updateVal(this)">
+          <div class="ctrl-val" id="val-ROC_MIN_SHORT">-0.08</div>
+        </div>
+        <div class="divider"></div>
+        <div class="ctrl-row">
+          <div><div class="ctrl-label">MACD fast period</div></div>
+          <input type="range" min="5" max="20" step="1" id="ctrl-MACD_FAST" oninput="updateVal(this)">
+          <div class="ctrl-val" id="val-MACD_FAST">12</div>
+        </div>
+        <div class="ctrl-row">
+          <div><div class="ctrl-label">MACD slow period</div></div>
+          <input type="range" min="15" max="50" step="1" id="ctrl-MACD_SLOW" oninput="updateVal(this)">
+          <div class="ctrl-val" id="val-MACD_SLOW">26</div>
+        </div>
+        <div class="ctrl-row">
+          <div><div class="ctrl-label">MACD signal period</div></div>
+          <input type="range" min="3" max="15" step="1" id="ctrl-MACD_SIGNAL_PERIOD" oninput="updateVal(this)">
+          <div class="ctrl-val" id="val-MACD_SIGNAL_PERIOD">9</div>
+        </div>
+        <div class="divider"></div>
+        <div class="ctrl-row">
+          <div><div class="ctrl-label">Candle consistency lookback</div><div class="ctrl-hint">How many candles to check for direction</div></div>
+          <input type="range" min="2" max="6" step="1" id="ctrl-CANDLE_CONSISTENCY_LOOKBACK" oninput="updateVal(this)">
+          <div class="ctrl-val" id="val-CANDLE_CONSISTENCY_LOOKBACK">3</div>
+        </div>
+        <div class="ctrl-row">
+          <div><div class="ctrl-label">Candle consistency min</div><div class="ctrl-hint">Candles that must agree with direction</div></div>
+          <input type="range" min="1" max="5" step="1" id="ctrl-CANDLE_CONSISTENCY_MIN" oninput="updateVal(this)">
+          <div class="ctrl-val" id="val-CANDLE_CONSISTENCY_MIN">2</div>
+        </div>
       </div>
     </div>
-    <div style="font-size:10px;color:var(--text-muted);margin-top:4px">Meta brain recommended: 11am–1pm ET based on today's data.</div>
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <!-- MTF Filter -->
+      <div class="ctrl-group">
+        <h3><i class="ti ti-layers-intersect"></i> Multi-Timeframe Filter</h3>
+        <div class="ctrl-row">
+          <div><div class="ctrl-label">Enable MTF filter</div><div class="ctrl-hint">Block entries that go against the ~21-min trend</div></div>
+          <label class="toggle-switch"><input type="checkbox" id="ctrl-MTF_FILTER_ENABLED" onchange="toggleBool(this,'MTF_FILTER_ENABLED'); dimSection('mtf-controls',!this.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+        </div>
+        <div id="mtf-controls">
+          <div class="ctrl-row">
+            <div><div class="ctrl-label">MTF EMA period</div><div class="ctrl-hint">Period on 1-min candles (21 ≈ 21-min trend)</div></div>
+            <input type="range" min="5" max="50" step="1" id="ctrl-MTF_EMA_PERIOD" oninput="updateVal(this)">
+            <div class="ctrl-val" id="val-MTF_EMA_PERIOD">21</div>
+          </div>
+        </div>
+      </div>
+      <!-- Direction Flip -->
+      <div class="ctrl-group">
+        <h3><i class="ti ti-arrows-exchange"></i> Direction Flip</h3>
+        <div class="ctrl-row">
+          <div><div class="ctrl-label">Enable direction flip</div><div class="ctrl-hint">Exit position when signals reverse direction</div></div>
+          <label class="toggle-switch"><input type="checkbox" id="ctrl-FLIP_ENABLED" onchange="toggleBool(this,'FLIP_ENABLED'); dimSection('flip-controls',!this.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+        </div>
+        <div id="flip-controls">
+          <div class="ctrl-row">
+            <div><div class="ctrl-label">Flip confirmation signals</div><div class="ctrl-hint">Signals needed in new direction before re-entering (1 = instant)</div></div>
+            <input type="range" min="1" max="5" step="1" id="ctrl-FLIP_MIN_SIGNALS" oninput="updateVal(this)">
+            <div class="ctrl-val" id="val-FLIP_MIN_SIGNALS">1</div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
-  <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+  <!-- Row 3: Dynamic TP + Faster Scan -->
+  <div class="ctrls-row">
+    <div class="ctrl-group">
+      <h3><i class="ti ti-target-arrow"></i> Dynamic TP Extension</h3>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">Enable dynamic TP</div><div class="ctrl-hint">Extend TP when momentum still firing at first target</div></div>
+        <label class="toggle-switch"><input type="checkbox" id="ctrl-DYNAMIC_TP_ENABLED" onchange="toggleBool(this,'DYNAMIC_TP_ENABLED'); dimSection('dtp-controls',!this.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+      </div>
+      <div id="dtp-controls">
+        <div class="ctrl-row">
+          <div><div class="ctrl-label">TP extension (ATR multiples)</div><div class="ctrl-hint">Extra ATR added beyond first target</div></div>
+          <input type="range" min="0.5" max="3.0" step="0.25" id="ctrl-DYNAMIC_TP_EXTENSION" oninput="updateVal(this)">
+          <div class="ctrl-val" id="val-DYNAMIC_TP_EXTENSION">1.0</div>
+        </div>
+        <div class="ctrl-row">
+          <div><div class="ctrl-label">Min momentum to extend</div><div class="ctrl-hint">Momentum confirmations needed (out of 3)</div></div>
+          <input type="range" min="1" max="3" step="1" id="ctrl-DYNAMIC_TP_MIN_MOMENTUM" oninput="updateVal(this)">
+          <div class="ctrl-val" id="val-DYNAMIC_TP_MIN_MOMENTUM">2</div>
+        </div>
+      </div>
+    </div>
+    <div class="ctrl-group">
+      <h3><i class="ti ti-bolt"></i> Faster Scan on Breakouts</h3>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">Enable fast scan</div><div class="ctrl-hint">Reduce scan interval when strong signal detected</div></div>
+        <label class="toggle-switch"><input type="checkbox" id="ctrl-FAST_SCAN_ENABLED" onchange="toggleBool(this,'FAST_SCAN_ENABLED'); dimSection('fast-controls',!this.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+      </div>
+      <div id="fast-controls">
+        <div class="ctrl-row">
+          <div><div class="ctrl-label">Score threshold to activate</div><div class="ctrl-hint">Base score (out of 5) that triggers fast scan</div></div>
+          <input type="range" min="3" max="5" step="1" id="ctrl-FAST_SCAN_SCORE" oninput="updateVal(this)">
+          <div class="ctrl-val" id="val-FAST_SCAN_SCORE">5</div>
+        </div>
+        <div class="ctrl-row">
+          <div><div class="ctrl-label">Fast scan interval (seconds)</div><div class="ctrl-hint">How often to scan during a breakout window (5 min)</div></div>
+          <input type="range" min="10" max="45" step="5" id="ctrl-FAST_SCAN_INTERVAL" oninput="updateVal(this,'s')">
+          <div class="ctrl-val" id="val-FAST_SCAN_INTERVAL">20s</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row 4: Session Controls -->
+  <div class="ctrls-row single">
+    <div class="ctrl-group">
+      <h3><i class="ti ti-clock"></i> Session Controls</h3>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">Close all positions at end of day (3:55pm ET)</div></div>
+        <label class="toggle-switch"><input type="checkbox" id="ctrl-CLOSE_EOD" onchange="toggleBool(this,'CLOSE_EOD')"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+      </div>
+      <div class="divider"></div>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">Block trading during dead zone</div><div class="ctrl-hint">Prevents entries during choppy midday hours</div></div>
+        <label class="toggle-switch"><input type="checkbox" id="ctrl-BLACKOUT_ENABLED" onchange="toggleBool(this,'BLACKOUT_ENABLED'); dimSection('blackout-time',!this.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+      </div>
+      <div id="blackout-time" class="ctrl-row" style="margin-top:8px">
+        <div class="ctrl-label" style="color:var(--text-muted)">Blackout window (ET 24h)</div>
+        <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-secondary)">
+          <input type="number" class="num-input" id="ctrl-BLACKOUT_START" min="9" max="15" value="11" oninput="configState['BLACKOUT_START']=parseInt(this.value)">
+          <span>:00 to</span>
+          <input type="number" class="num-input" id="ctrl-BLACKOUT_END" min="9" max="16" value="13" oninput="configState['BLACKOUT_END']=parseInt(this.value)">
+          <span>:00 ET</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:4px">
     <button class="save-btn" onclick="saveConfig()">Save All Changes</button>
     <span id="save-status" style="font-size:11px;color:var(--text-muted)"></span>
   </div>
@@ -280,7 +396,7 @@
       <div class="panel-body" style="padding:0"><table class="data-table"><thead><tr><th>Symbol</th><th>Trades</th><th>Win %</th><th>P&L</th></tr></thead><tbody id="symbol-body"><tr><td colspan="4" class="empty-state">No data yet</td></tr></tbody></table></div>
     </div>
     <div class="panel">
-      <div class="panel-header"><div class="panel-title">Win / Loss Distribution</div></div>
+      <div class="panel-header"><div class="panel-title">Win / Loss</div></div>
       <div class="panel-body"><div class="chart-wrap" style="height:160px"><canvas id="wr-chart"></canvas></div></div>
     </div>
   </div>
@@ -292,7 +408,7 @@
     <span style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-muted)">Daily AI analysis — auto-runs at 5pm ET</span>
     <button class="refresh-btn" onclick="runMeta()" id="meta-run-btn"><i class="ti ti-brain"></i> Run Now</button>
   </div>
-  <div id="meta-reviews-container"><div class="empty-state">No reviews yet — click "Run Now" or wait for 5pm ET.</div></div>
+  <div id="meta-reviews-container"><div class="empty-state">No reviews yet.</div></div>
 </div>
 
 <!-- LOGS -->
@@ -305,280 +421,295 @@
 </div>
 
 <script>
-let pnlChart = null, wrChart = null;
-const configState = {};
+let pnlChart=null, wrChart=null;
+const configState={};
 
-function switchTab(name) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.content').forEach(c => c.classList.remove('active'));
+function switchTab(name){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.content').forEach(c=>c.classList.remove('active'));
   event.target.closest('.tab').classList.add('active');
-  document.getElementById('tab-' + name).classList.add('active');
-  if (name === 'overview')    loadOverview();
-  if (name === 'signals')     loadSignals();
-  if (name === 'controls')    loadConfig();
-  if (name === 'performance') loadPerformance();
-  if (name === 'meta')        loadMeta();
-  if (name === 'logs')        loadLogs();
+  document.getElementById('tab-'+name).classList.add('active');
+  if(name==='overview')    loadOverview();
+  if(name==='signals')     loadSignals();
+  if(name==='controls')    loadConfig();
+  if(name==='performance') loadPerformance();
+  if(name==='meta')        loadMeta();
+  if(name==='logs')        loadLogs();
 }
 
-function fmt(n) {
-  if (n === null || n === undefined) return '—';
-  const v = parseFloat(n);
-  return (v >= 0 ? '+' : '') + '$' + Math.abs(v).toFixed(2);
+function fmt(n){
+  if(n===null||n===undefined)return'—';
+  const v=parseFloat(n);
+  return(v>=0?'+':'')+`$${Math.abs(v).toFixed(2)}`;
+}
+function fmtTime(iso){
+  if(!iso)return'—';
+  return new Date(iso).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false});
+}
+function scorePips(score,max){
+  max=max||5;
+  let h='<div class="score-bar">';
+  for(let i=0;i<max;i++) h+=`<div class="score-pip${i<score?' filled':''}"></div>`;
+  return h+'</div>';
+}
+function marketStatus(){
+  const et=new Date(new Date().toLocaleString('en-US',{timeZone:'America/New_York'}));
+  const h=et.getHours(),m=et.getMinutes(),day=et.getDay();
+  const open=(h>9||(h===9&&m>=30))&&h<16;
+  document.getElementById('market-status').textContent=(day===0||day===6)?'WEEKEND':open?'MARKET OPEN':'MARKET CLOSED';
+  document.getElementById('last-update').textContent='Updated '+new Date().toLocaleTimeString();
 }
 
-function fmtTime(iso) {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+async function loadOverview(){
+  try{
+    const d=await fetch('/api/overview').then(r=>r.json());
+    if(d.error)return;
+    const pnl=d.today.pnl;
+    const el=document.getElementById('today-pnl');
+    el.textContent=fmt(pnl); el.className='stat-value '+(pnl>=0?'green':'red');
+    document.getElementById('today-wr').textContent=d.today.win_rate+'%';
+    document.getElementById('today-trades').textContent=d.today.trades+' trades today';
+    document.getElementById('open-count').textContent=d.today.open_count;
+    const wpnl=d.week.pnl;
+    const wel=document.getElementById('week-pnl');
+    wel.textContent=fmt(wpnl); wel.className='stat-value '+(wpnl>=0?'green':'red');
+    document.getElementById('week-wr').textContent=d.week.win_rate+'% win rate';
+    const ob=document.getElementById('open-trades-body');
+    ob.innerHTML=!d.open_trades.length?'<tr><td colspan="7" class="empty-state">No open positions</td></tr>'
+      :d.open_trades.map(t=>`<tr>
+        <td style="color:var(--text-primary);font-weight:500">${t.symbol}</td>
+        <td><span class="badge badge-${t.side}">${t.side.toUpperCase()}</span></td>
+        <td>$${parseFloat(t.entry_price).toFixed(2)}</td>
+        <td style="color:var(--red)">$${parseFloat(t.stop_loss).toFixed(2)}</td>
+        <td style="color:var(--green)">$${parseFloat(t.take_profit).toFixed(2)}</td>
+        <td style="color:${t.pnl_usd>=0?'var(--green)':'var(--red)'}">${fmt(t.pnl_usd)}</td>
+        <td>${scorePips(t.signal_score,5)}</td></tr>`).join('');
+    const rb=document.getElementById('recent-trades-body');
+    rb.innerHTML=!d.recent_trades.length?'<tr><td colspan="6" class="empty-state">No closed trades yet</td></tr>'
+      :d.recent_trades.map(t=>`<tr>
+        <td style="color:var(--text-primary);font-weight:500">${t.symbol}</td>
+        <td><span class="badge badge-${t.side}">${t.side.toUpperCase()}</span></td>
+        <td style="color:${t.pnl_usd>=0?'var(--green)':'var(--red)'};font-weight:500">${fmt(t.pnl_usd)}</td>
+        <td><span class="badge ${t.exit_reason==='take_profit_extended'?'badge-open':t.status==='stopped'?'badge-stopped':'badge-closed'}">${t.exit_reason||t.status}</span></td>
+        <td>${scorePips(t.signal_score,5)}</td>
+        <td style="color:var(--text-muted)">${fmtTime(t.exited_at)}</td></tr>`).join('');
+  }catch(e){console.error(e);}
 }
 
-function scorePips(score, max) {
-  max = max || 6;
-  let h = '<div class="score-bar">';
-  for (let i = 0; i < max; i++) h += `<div class="score-pip${i < score ? ' filled' : ''}"></div>`;
-  return h + '</div>';
-}
-
-function marketStatus() {
-  const et = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  const h = et.getHours(), m = et.getMinutes(), day = et.getDay();
-  const open = (h > 9 || (h === 9 && m >= 30)) && h < 16;
-  document.getElementById('market-status').textContent = (day === 0 || day === 6) ? 'WEEKEND' : open ? 'MARKET OPEN' : 'MARKET CLOSED';
-  document.getElementById('last-update').textContent = 'Updated ' + new Date().toLocaleTimeString();
-}
-
-async function loadOverview() {
-  try {
-    const d = await fetch('/api/overview').then(r => r.json());
-    if (d.error) return;
-    const pnl = d.today.pnl;
-    const el = document.getElementById('today-pnl');
-    el.textContent = fmt(pnl);
-    el.className = 'stat-value ' + (pnl >= 0 ? 'green' : 'red');
-    document.getElementById('today-wr').textContent = d.today.win_rate + '%';
-    document.getElementById('today-trades').textContent = d.today.trades + ' trades today';
-    document.getElementById('open-count').textContent = d.today.open_count;
-    const wpnl = d.week.pnl;
-    const wel = document.getElementById('week-pnl');
-    wel.textContent = fmt(wpnl);
-    wel.className = 'stat-value ' + (wpnl >= 0 ? 'green' : 'red');
-    document.getElementById('week-wr').textContent = d.week.win_rate + '% win rate';
-    const ob = document.getElementById('open-trades-body');
-    ob.innerHTML = !d.open_trades.length ? '<tr><td colspan="7" class="empty-state">No open positions</td></tr>'
-      : d.open_trades.map(t => `<tr>
-          <td style="color:var(--text-primary);font-weight:500">${t.symbol}</td>
-          <td><span class="badge badge-${t.side}">${t.side.toUpperCase()}</span></td>
-          <td>$${parseFloat(t.entry_price).toFixed(2)}</td>
-          <td style="color:var(--red)">$${parseFloat(t.stop_loss).toFixed(2)}</td>
-          <td style="color:var(--green)">$${parseFloat(t.take_profit).toFixed(2)}</td>
-          <td style="color:${t.pnl_usd >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt(t.pnl_usd)}</td>
-          <td>${scorePips(t.signal_score, 6)}</td>
-        </tr>`).join('');
-    const rb = document.getElementById('recent-trades-body');
-    rb.innerHTML = !d.recent_trades.length ? '<tr><td colspan="6" class="empty-state">No closed trades yet</td></tr>'
-      : d.recent_trades.map(t => `<tr>
-          <td style="color:var(--text-primary);font-weight:500">${t.symbol}</td>
-          <td><span class="badge badge-${t.side}">${t.side.toUpperCase()}</span></td>
-          <td style="color:${t.pnl_usd >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:500">${fmt(t.pnl_usd)}</td>
-          <td><span class="badge ${t.status === 'stopped' ? 'badge-stopped' : 'badge-closed'}">${t.exit_reason || t.status}</span></td>
-          <td>${scorePips(t.signal_score, 6)}</td>
-          <td style="color:var(--text-muted)">${fmtTime(t.exited_at)}</td>
-        </tr>`).join('');
-  } catch(e) { console.error(e); }
-}
-
-async function loadSignals() {
-  try {
-    const rows = await fetch('/api/signals').then(r => r.json());
-    const sb = document.getElementById('signals-body');
-    if (!rows.length || rows.error) { sb.innerHTML = '<tr><td colspan="11" class="empty-state">No signals yet</td></tr>'; return; }
-    const dot = v => `<span class="sig-dot ${v ? 'on' : 'off'}"></span>`;
-    sb.innerHTML = rows.map(s => `<tr>
+async function loadSignals(){
+  try{
+    const rows=await fetch('/api/signals').then(r=>r.json());
+    const sb=document.getElementById('signals-body');
+    if(!rows.length||rows.error){sb.innerHTML='<tr><td colspan="10" class="empty-state">No signals yet</td></tr>';return;}
+    const dot=v=>`<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${v?'var(--green)':'var(--text-muted)'}"></span>`;
+    sb.innerHTML=rows.map(s=>`<tr>
       <td style="color:var(--text-muted)">${fmtTime(s.timestamp)}</td>
       <td style="color:var(--text-primary);font-weight:500">${s.symbol}</td>
-      <td>${s.direction ? `<span class="badge badge-${s.direction}">${s.direction.toUpperCase()}</span>` : '<span style="color:var(--text-muted)">—</span>'}</td>
-      <td>${scorePips(s.score, 6)}</td>
+      <td>${s.direction?`<span class="badge badge-${s.direction}">${s.direction.toUpperCase()}</span>`:'<span style="color:var(--text-muted)">—</span>'}</td>
+      <td>${scorePips(s.score,5)}</td>
       <td>${dot(s.ema_cross)}</td><td>${dot(s.vwap_side)}</td><td>${dot(s.volume_spike)}</td>
       <td>${dot(s.rsi_confirm)}</td><td>${dot(s.price_action)}</td>
-      <td>${dot(s.roc_confirm !== undefined ? s.roc_confirm : null)}</td>
-      <td>${s.traded ? '<span class="badge badge-open">TRADED</span>' : '<span style="color:var(--text-muted)">—</span>'}</td>
+      <td>${s.traded?'<span class="badge badge-open">TRADED</span>':'<span style="color:var(--text-muted)">—</span>'}</td>
     </tr>`).join('');
-  } catch(e) { console.error(e); }
+  }catch(e){console.error(e);}
 }
 
-async function loadConfig() {
-  try {
-    const cfg = await fetch('/api/config').then(r => r.json());
-    const setSlider = (key, val, suffix) => {
-      const el = document.getElementById('ctrl-' + key);
-      const ve = document.getElementById('val-' + key);
-      if (el) el.value = val;
-      if (ve) ve.textContent = val + (suffix || '');
-      configState[key] = val;
+function dimSection(id,dim){
+  const el=document.getElementById(id);
+  if(el) el.className=dim?'dimmed':'';
+}
+
+async function loadConfig(){
+  try{
+    const cfg=await fetch('/api/config').then(r=>r.json());
+    const s=(key,val,suffix)=>{
+      const el=document.getElementById('ctrl-'+key);
+      const ve=document.getElementById('val-'+key);
+      if(el)el.value=val;
+      if(ve)ve.textContent=val+(suffix||'');
+      configState[key]=val;
     };
-    setSlider('MIN_SIGNAL_SCORE', cfg.MIN_SIGNAL_SCORE);
-    setSlider('ROC_MIN_LONG',     cfg.ROC_MIN_LONG);
-    setSlider('ROC_MIN_SHORT',    cfg.ROC_MIN_SHORT);
-    setSlider('VWAP_DEV_MULT',    cfg.VWAP_DEV_MULT);
-    setSlider('VOL_ACCEL_MULT',   cfg.VOL_ACCEL_MULT);
-    setSlider('FLIP_MIN_SIGNALS', cfg.FLIP_MIN_SIGNALS);
-    const flipEnabled = parseInt(cfg.FLIP_ENABLED ?? 1);
-    const flipEl = document.getElementById('ctrl-FLIP_ENABLED');
-    if (flipEl) flipEl.checked = flipEnabled === 1;
-    configState['FLIP_ENABLED'] = flipEnabled;
-    updateFlipState();
-    setSlider('RSI_OVERBOUGHT',   cfg.RSI_OVERBOUGHT);
-    setSlider('RSI_OVERSOLD',     cfg.RSI_OVERSOLD);
-    setSlider('MAX_OPEN_TRADES',  cfg.MAX_OPEN_TRADES);
-    setSlider('ATR_STOP_MULT',    cfg.ATR_STOP_MULT);
-    setSlider('ATR_TP_MULT',      cfg.ATR_TP_MULT);
-    setSlider('BREAKEVEN_ATR_MULT', cfg.BREAKEVEN_ATR_MULT);
-    const lev = document.getElementById('ctrl-SIMULATED_LEVERAGE');
-    if (lev) lev.value = cfg.SIMULATED_LEVERAGE;
-    document.getElementById('val-SIMULATED_LEVERAGE').textContent = cfg.SIMULATED_LEVERAGE + 'x';
-    configState['SIMULATED_LEVERAGE'] = cfg.SIMULATED_LEVERAGE;
-    const dlPct = Math.round(cfg.MAX_DAILY_LOSS_PCT * 100);
-    const dlEl = document.getElementById('ctrl-MAX_DAILY_LOSS_PCT_pct');
-    if (dlEl) dlEl.value = dlPct;
-    document.getElementById('val-MAX_DAILY_LOSS_PCT').textContent = dlPct + '%';
-    configState['MAX_DAILY_LOSS_PCT'] = cfg.MAX_DAILY_LOSS_PCT;
-    const mpPct = Math.round(cfg.MAX_POSITION_PCT * 100);
-    const mpEl = document.getElementById('ctrl-MAX_POSITION_PCT_pct');
-    if (mpEl) mpEl.value = mpPct;
-    document.getElementById('val-MAX_POSITION_PCT').textContent = mpPct + '%';
-    configState['MAX_POSITION_PCT'] = cfg.MAX_POSITION_PCT;
-    const closeEod = parseInt(cfg.CLOSE_EOD ?? 1);
-    const eodEl = document.getElementById('ctrl-CLOSE_EOD');
-    if (eodEl) eodEl.checked = closeEod === 1;
-    configState['CLOSE_EOD'] = closeEod;
-    const blackoutEnabled = parseInt(cfg.BLACKOUT_ENABLED ?? 0);
-    const boEl = document.getElementById('ctrl-BLACKOUT_ENABLED');
-    if (boEl) boEl.checked = blackoutEnabled === 1;
-    configState['BLACKOUT_ENABLED'] = blackoutEnabled;
-    const boStart = document.getElementById('ctrl-BLACKOUT_START');
-    const boEnd   = document.getElementById('ctrl-BLACKOUT_END');
-    if (boStart) boStart.value = cfg.BLACKOUT_START ?? 11;
-    if (boEnd)   boEnd.value   = cfg.BLACKOUT_END   ?? 13;
-    configState['BLACKOUT_START'] = cfg.BLACKOUT_START ?? 11;
-    configState['BLACKOUT_END']   = cfg.BLACKOUT_END   ?? 13;
-    updateBlackoutState();
-  } catch(e) { console.error(e); }
+    // Base signals
+    s('PRIME_BASE_MIN',    cfg.PRIME_BASE_MIN);
+    s('REGULAR_BASE_MIN',  cfg.REGULAR_BASE_MIN);
+    s('PRIME_END_HOUR',    cfg.PRIME_END_HOUR);
+    s('VWAP_DEV_MULT',     cfg.VWAP_DEV_MULT);
+    s('VOL_ACCEL_MULT',    cfg.VOL_ACCEL_MULT);
+    s('RSI_OVERBOUGHT',    cfg.RSI_OVERBOUGHT);
+    s('RSI_OVERSOLD',      cfg.RSI_OVERSOLD);
+    // Risk
+    s('SIMULATED_LEVERAGE', cfg.SIMULATED_LEVERAGE,'x');
+    s('MAX_OPEN_TRADES',   cfg.MAX_OPEN_TRADES);
+    s('ATR_STOP_MULT',     cfg.ATR_STOP_MULT);
+    s('ATR_TP_MULT',       cfg.ATR_TP_MULT);
+    s('BREAKEVEN_ATR_MULT',cfg.BREAKEVEN_ATR_MULT);
+    const dlPct=Math.round(cfg.MAX_DAILY_LOSS_PCT*100);
+    const dlEl=document.getElementById('ctrl-MAX_DAILY_LOSS_PCT_pct');
+    if(dlEl)dlEl.value=dlPct;
+    document.getElementById('val-MAX_DAILY_LOSS_PCT').textContent=dlPct+'%';
+    configState['MAX_DAILY_LOSS_PCT']=cfg.MAX_DAILY_LOSS_PCT;
+    const mpPct=Math.round(cfg.MAX_POSITION_PCT*100);
+    const mpEl=document.getElementById('ctrl-MAX_POSITION_PCT_pct');
+    if(mpEl)mpEl.value=mpPct;
+    document.getElementById('val-MAX_POSITION_PCT').textContent=mpPct+'%';
+    configState['MAX_POSITION_PCT']=cfg.MAX_POSITION_PCT;
+    // Momentum gate
+    const mgEnabled=parseInt(cfg.MOMENTUM_GATE_ENABLED??1);
+    const mgEl=document.getElementById('ctrl-MOMENTUM_GATE_ENABLED');
+    if(mgEl)mgEl.checked=mgEnabled===1;
+    configState['MOMENTUM_GATE_ENABLED']=mgEnabled;
+    dimSection('mom-controls',mgEnabled===0);
+    s('MOMENTUM_GATE_MIN',           cfg.MOMENTUM_GATE_MIN);
+    s('ROC_MIN_LONG',                cfg.ROC_MIN_LONG);
+    s('ROC_MIN_SHORT',               cfg.ROC_MIN_SHORT);
+    s('MACD_FAST',                   cfg.MACD_FAST);
+    s('MACD_SLOW',                   cfg.MACD_SLOW);
+    s('MACD_SIGNAL_PERIOD',          cfg.MACD_SIGNAL_PERIOD);
+    s('CANDLE_CONSISTENCY_LOOKBACK', cfg.CANDLE_CONSISTENCY_LOOKBACK);
+    s('CANDLE_CONSISTENCY_MIN',      cfg.CANDLE_CONSISTENCY_MIN);
+    // MTF
+    const mtfEnabled=parseInt(cfg.MTF_FILTER_ENABLED??1);
+    const mtfEl=document.getElementById('ctrl-MTF_FILTER_ENABLED');
+    if(mtfEl)mtfEl.checked=mtfEnabled===1;
+    configState['MTF_FILTER_ENABLED']=mtfEnabled;
+    dimSection('mtf-controls',mtfEnabled===0);
+    s('MTF_EMA_PERIOD',cfg.MTF_EMA_PERIOD);
+    // Dynamic TP
+    const dtpEnabled=parseInt(cfg.DYNAMIC_TP_ENABLED??1);
+    const dtpEl=document.getElementById('ctrl-DYNAMIC_TP_ENABLED');
+    if(dtpEl)dtpEl.checked=dtpEnabled===1;
+    configState['DYNAMIC_TP_ENABLED']=dtpEnabled;
+    dimSection('dtp-controls',dtpEnabled===0);
+    s('DYNAMIC_TP_EXTENSION',    cfg.DYNAMIC_TP_EXTENSION);
+    s('DYNAMIC_TP_MIN_MOMENTUM', cfg.DYNAMIC_TP_MIN_MOMENTUM);
+    // Fast scan
+    const fsEnabled=parseInt(cfg.FAST_SCAN_ENABLED??1);
+    const fsEl=document.getElementById('ctrl-FAST_SCAN_ENABLED');
+    if(fsEl)fsEl.checked=fsEnabled===1;
+    configState['FAST_SCAN_ENABLED']=fsEnabled;
+    dimSection('fast-controls',fsEnabled===0);
+    s('FAST_SCAN_SCORE',    cfg.FAST_SCAN_SCORE);
+    s('FAST_SCAN_INTERVAL', cfg.FAST_SCAN_INTERVAL,'s');
+    // Flip
+    const flipEnabled=parseInt(cfg.FLIP_ENABLED??1);
+    const flipEl=document.getElementById('ctrl-FLIP_ENABLED');
+    if(flipEl)flipEl.checked=flipEnabled===1;
+    configState['FLIP_ENABLED']=flipEnabled;
+    dimSection('flip-controls',flipEnabled===0);
+    s('FLIP_MIN_SIGNALS',cfg.FLIP_MIN_SIGNALS);
+    // Session
+    const closeEod=parseInt(cfg.CLOSE_EOD??1);
+    const eodEl=document.getElementById('ctrl-CLOSE_EOD');
+    if(eodEl)eodEl.checked=closeEod===1;
+    configState['CLOSE_EOD']=closeEod;
+    const boEnabled=parseInt(cfg.BLACKOUT_ENABLED??0);
+    const boEl=document.getElementById('ctrl-BLACKOUT_ENABLED');
+    if(boEl)boEl.checked=boEnabled===1;
+    configState['BLACKOUT_ENABLED']=boEnabled;
+    dimSection('blackout-time',boEnabled===0);
+    const boStart=document.getElementById('ctrl-BLACKOUT_START');
+    const boEnd=document.getElementById('ctrl-BLACKOUT_END');
+    if(boStart)boStart.value=cfg.BLACKOUT_START??11;
+    if(boEnd)boEnd.value=cfg.BLACKOUT_END??13;
+    configState['BLACKOUT_START']=cfg.BLACKOUT_START??11;
+    configState['BLACKOUT_END']=cfg.BLACKOUT_END??13;
+  }catch(e){console.error(e);}
 }
 
-function updateVal(el) {
-  const key = el.id.replace('ctrl-', '');
-  const val = parseFloat(el.value);
-  configState[key] = val;
-  const ve = document.getElementById('val-' + key);
-  if (ve) ve.textContent = val + (key === 'SIMULATED_LEVERAGE' ? 'x' : '');
+function updateVal(el,suffix){
+  const key=el.id.replace('ctrl-','');
+  const val=parseFloat(el.value);
+  configState[key]=val;
+  const ve=document.getElementById('val-'+key);
+  if(ve)ve.textContent=val+(suffix||'');
+}
+function updateValPct(el,realKey){
+  const pct=parseInt(el.value);
+  configState[realKey]=pct/100;
+  document.getElementById('val-'+realKey).textContent=pct+'%';
+}
+function toggleBool(checkbox,key){configState[key]=checkbox.checked?1:0;}
+
+async function saveConfig(){
+  const status=document.getElementById('save-status');
+  status.textContent='Saving...'; status.style.color='var(--text-muted)';
+  try{
+    const d=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(configState)}).then(r=>r.json());
+    status.textContent=d.success?'✓ Saved — takes effect on next scan':'Error: '+d.error;
+    status.style.color=d.success?'var(--green)':'var(--red)';
+  }catch(e){status.textContent='Failed to save';status.style.color='var(--red)';}
+  setTimeout(()=>{status.textContent='';},4000);
 }
 
-function updateValPct(el, realKey) {
-  const pct = parseInt(el.value);
-  configState[realKey] = pct / 100;
-  document.getElementById('val-' + realKey).textContent = pct + '%';
-}
-
-function toggleBool(checkbox, key) { configState[key] = checkbox.checked ? 1 : 0; }
-
-function updateFlipState() {
-  const enabled = document.getElementById('ctrl-FLIP_ENABLED').checked;
-  const row = document.getElementById('flip-signals-row');
-  row.style.opacity = enabled ? '1' : '0.4';
-  row.style.pointerEvents = enabled ? 'auto' : 'none';
-}
-
-function updateBlackoutState() {
-  const enabled = document.getElementById('ctrl-BLACKOUT_ENABLED').checked;
-  const row = document.getElementById('blackout-time-row');
-  row.style.opacity = enabled ? '1' : '0.4';
-  row.style.pointerEvents = enabled ? 'auto' : 'none';
-}
-
-async function saveConfig() {
-  const status = document.getElementById('save-status');
-  status.textContent = 'Saving...'; status.style.color = 'var(--text-muted)';
-  try {
-    const d = await fetch('/api/config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(configState) }).then(r => r.json());
-    status.textContent = d.success ? '✓ Saved — takes effect on next scan' : 'Error: ' + d.error;
-    status.style.color = d.success ? 'var(--green)' : 'var(--red)';
-  } catch(e) { status.textContent = 'Failed to save'; status.style.color = 'var(--red)'; }
-  setTimeout(() => { status.textContent = ''; }, 4000);
-}
-
-async function loadPerformance() {
-  try {
-    const d = await fetch('/api/performance').then(r => r.json());
-    if (pnlChart) pnlChart.destroy();
-    const ctx = document.getElementById('pnl-chart').getContext('2d');
-    if (!d.daily.length) { ctx.fillStyle = '#4a6080'; ctx.font = '12px monospace'; ctx.fillText('No trade data yet', 20, 100); }
-    else {
-      pnlChart = new Chart(ctx, { type:'bar', data:{ labels: d.daily.map(x=>x.trade_date.slice(5)), datasets:[{ label:'P&L', data: d.daily.map(x=>x.pnl), backgroundColor: d.daily.map(x=>x.pnl>=0?'rgba(16,185,129,0.7)':'rgba(239,68,68,0.7)'), borderRadius:3 }] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x:{ticks:{color:'#4a6080',font:{size:10}},grid:{color:'rgba(255,255,255,0.04)'}}, y:{ticks:{color:'#4a6080',font:{size:10},callback:v=>'$'+v},grid:{color:'rgba(255,255,255,0.04)'}} } } });
+async function loadPerformance(){
+  try{
+    const d=await fetch('/api/performance').then(r=>r.json());
+    if(pnlChart)pnlChart.destroy();
+    const ctx=document.getElementById('pnl-chart').getContext('2d');
+    if(!d.daily.length){ctx.fillStyle='#4a6080';ctx.font='12px monospace';ctx.fillText('No trade data yet',20,100);}
+    else{
+      pnlChart=new Chart(ctx,{type:'bar',data:{labels:d.daily.map(x=>x.trade_date.slice(5)),datasets:[{label:'P&L',data:d.daily.map(x=>x.pnl),backgroundColor:d.daily.map(x=>x.pnl>=0?'rgba(16,185,129,0.7)':'rgba(239,68,68,0.7)'),borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#4a6080',font:{size:10}},grid:{color:'rgba(255,255,255,0.04)'}},y:{ticks:{color:'#4a6080',font:{size:10},callback:v=>'$'+v},grid:{color:'rgba(255,255,255,0.04)'}}}}}); 
     }
-    const sb = document.getElementById('symbol-body');
-    sb.innerHTML = !d.by_symbol.length ? '<tr><td colspan="4" class="empty-state">No data yet</td></tr>'
-      : d.by_symbol.map(s => { const wr = s.trades ? Math.round(s.wins/s.trades*100) : 0; return `<tr><td style="color:var(--text-primary)">${s.symbol}</td><td>${s.trades}</td><td style="color:var(--cyan)">${wr}%</td><td style="color:${s.pnl>=0?'var(--green)':'var(--red)'}">${fmt(s.pnl)}</td></tr>`; }).join('');
-    const totalTrades = d.by_symbol.reduce((a,s)=>a+s.trades,0);
-    const totalWins   = d.by_symbol.reduce((a,s)=>a+s.wins,0);
-    if (wrChart) wrChart.destroy();
-    wrChart = new Chart(document.getElementById('wr-chart').getContext('2d'), { type:'doughnut', data:{ labels:['Wins','Losses'], datasets:[{data:[totalWins||1,(totalTrades-totalWins)||1],backgroundColor:['rgba(16,185,129,0.8)','rgba(239,68,68,0.8)'],borderWidth:0}] }, options:{ responsive:true, maintainAspectRatio:false, cutout:'70%', plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.label}: ${c.raw} (${Math.round(c.raw/(totalTrades||1)*100)}%)`}}} } });
-  } catch(e) { console.error(e); }
+    const sb=document.getElementById('symbol-body');
+    sb.innerHTML=!d.by_symbol.length?'<tr><td colspan="4" class="empty-state">No data yet</td></tr>'
+      :d.by_symbol.map(s=>{const wr=s.trades?Math.round(s.wins/s.trades*100):0;return`<tr><td style="color:var(--text-primary)">${s.symbol}</td><td>${s.trades}</td><td style="color:var(--cyan)">${wr}%</td><td style="color:${s.pnl>=0?'var(--green)':'var(--red)'}">${fmt(s.pnl)}</td></tr>`;}).join('');
+    const total=d.by_symbol.reduce((a,s)=>a+s.trades,0);
+    const wins=d.by_symbol.reduce((a,s)=>a+s.wins,0);
+    if(wrChart)wrChart.destroy();
+    wrChart=new Chart(document.getElementById('wr-chart').getContext('2d'),{type:'doughnut',data:{labels:['Wins','Losses'],datasets:[{data:[wins||1,(total-wins)||1],backgroundColor:['rgba(16,185,129,0.8)','rgba(239,68,68,0.8)'],borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,cutout:'70%',plugins:{legend:{display:false}}}});
+  }catch(e){console.error(e);}
 }
 
-async function loadMeta() {
-  try {
-    const rows = await fetch('/api/meta').then(r => r.json());
-    const c = document.getElementById('meta-reviews-container');
-    if (!rows.length) { c.innerHTML = '<div class="empty-state">No reviews yet.</div>'; return; }
-    c.innerHTML = rows.map(rev => `<div class="panel" style="margin-bottom:16px">
+async function loadMeta(){
+  try{
+    const rows=await fetch('/api/meta').then(r=>r.json());
+    const c=document.getElementById('meta-reviews-container');
+    if(!rows.length){c.innerHTML='<div class="empty-state">No reviews yet.</div>';return;}
+    c.innerHTML=rows.map(rev=>`<div class="panel" style="margin-bottom:16px">
       <div class="panel-header">
-        <div class="panel-title"><i class="ti ti-brain"></i> Meta Brain Review — ${rev.reviewed_at ? new Date(rev.reviewed_at).toLocaleDateString() : '—'}</div>
+        <div class="panel-title"><i class="ti ti-brain"></i> Meta Brain Review — ${rev.reviewed_at?new Date(rev.reviewed_at).toLocaleDateString():'—'}</div>
         <div style="display:flex;gap:16px;font-size:11px;color:var(--text-muted)">
-          <span>Win rate: <span style="color:var(--cyan)">${rev.win_rate_7d ? rev.win_rate_7d.toFixed(1) : '—'}%</span></span>
-          <span>R:R: <span style="color:var(--cyan)">${rev.avg_rr ? rev.avg_rr.toFixed(2) : '—'}</span></span>
-          <span>Missed wins: <span style="color:var(--amber)">${rev.missed_wins || 0}</span></span>
+          <span>Win rate: <span style="color:var(--cyan)">${rev.win_rate_7d?rev.win_rate_7d.toFixed(1):'—'}%</span></span>
+          <span>R:R: <span style="color:var(--cyan)">${rev.avg_rr?rev.avg_rr.toFixed(2):'—'}</span></span>
         </div>
       </div>
-      <div class="panel-body"><div style="white-space:pre-wrap;font-size:12px;line-height:1.8;color:var(--text-secondary)">${rev.full_report || '—'}</div></div>
+      <div class="panel-body"><div style="white-space:pre-wrap;font-size:12px;line-height:1.8;color:var(--text-secondary)">${rev.full_report||'—'}</div></div>
     </div>`).join('');
-  } catch(e) { console.error(e); }
+  }catch(e){console.error(e);}
 }
 
-async function runMeta() {
-  const btn = document.getElementById('meta-run-btn');
-  btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader"></i> Running...';
-  try {
-    const d = await fetch('/api/meta/run', { method: 'POST' }).then(r => r.json());
-    if (d.success) { await loadMeta(); btn.innerHTML = '<i class="ti ti-check"></i> Done!'; setTimeout(() => { btn.disabled = false; btn.innerHTML = '<i class="ti ti-brain"></i> Run Now'; }, 3000); }
-    else { btn.innerHTML = '<i class="ti ti-x"></i> Error'; btn.disabled = false; }
-  } catch(e) { btn.innerHTML = '<i class="ti ti-x"></i> Error'; btn.disabled = false; }
+async function runMeta(){
+  const btn=document.getElementById('meta-run-btn');
+  btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Running...';
+  try{
+    const d=await fetch('/api/meta/run',{method:'POST'}).then(r=>r.json());
+    if(d.success){await loadMeta();btn.innerHTML='<i class="ti ti-check"></i> Done!';setTimeout(()=>{btn.disabled=false;btn.innerHTML='<i class="ti ti-brain"></i> Run Now';},3000);}
+    else{btn.innerHTML='<i class="ti ti-x"></i> Error';btn.disabled=false;}
+  }catch(e){btn.innerHTML='<i class="ti ti-x"></i> Error';btn.disabled=false;}
 }
 
-function loadLogs() {
-  fetch('/api/signals').then(r => r.json()).then(signals => {
-    const container = document.getElementById('log-container');
-    if (!signals.length) { container.innerHTML = '<div style="color:var(--text-muted)">No signals yet. Market opens 9:30am ET.</div>'; return; }
-    container.innerHTML = signals.slice(0, 200).map(s => {
-      const dir = s.direction ? s.direction.toUpperCase() : 'SCAN';
-      const checks = [
-        s.ema_cross    ? 'EMA✓'  : 'EMA✗',
-        s.vwap_side    ? 'VWAP✓' : 'VWAP✗',
-        s.volume_spike ? 'VOL✓'  : 'VOL✗',
-        s.rsi_confirm  ? 'RSI✓'  : 'RSI✗',
-        s.price_action ? 'DEV✓'  : 'DEV✗',
-        s.roc_confirm !== undefined ? (s.roc_confirm ? 'ROC✓' : 'ROC✗') : '',
-      ].filter(Boolean).join(' ');
-      return `<div class="log-entry"><span class="log-time">${fmtTime(s.timestamp)}</span><span class="log-level-info">[SIGNAL]</span><span class="log-msg ${s.traded ? 'highlight' : ''}">${s.symbol} ${dir} [${s.score}/6] ${checks}${s.traded ? ' → TRADE ENTERED' : ''}</span></div>`;
+function loadLogs(){
+  fetch('/api/signals').then(r=>r.json()).then(signals=>{
+    const container=document.getElementById('log-container');
+    if(!signals.length){container.innerHTML='<div style="color:var(--text-muted)">No signals yet. Market opens 9:30am ET.</div>';return;}
+    container.innerHTML=signals.slice(0,200).map(s=>{
+      const dir=s.direction?s.direction.toUpperCase():'SCAN';
+      const checks=[
+        s.ema_cross?'EMA✓':'EMA✗',s.vwap_side?'VWAP✓':'VWAP✗',
+        s.volume_spike?'VOL✓':'VOL✗',s.rsi_confirm?'RSI✓':'RSI✗',
+        s.price_action?'DEV✓':'DEV✗'
+      ].join(' ');
+      return`<div class="log-entry"><span class="log-time">${fmtTime(s.timestamp)}</span><span class="log-level-info">[SIGNAL]</span><span class="log-msg ${s.traded?'highlight':''}">${s.symbol} ${dir} [${s.score}/5] ${checks}${s.traded?' → TRADED':''}</span></div>`;
     }).join('');
-    container.scrollTop = 0;
-  }).catch(() => { document.getElementById('log-container').innerHTML = '<div style="color:var(--red)">Failed to load.</div>'; });
+    container.scrollTop=0;
+  }).catch(()=>{document.getElementById('log-container').innerHTML='<div style="color:var(--red)">Failed to load.</div>';});
 }
 
 marketStatus();
 loadOverview();
-setInterval(loadOverview, 30000);
-setInterval(marketStatus, 30000);
-setInterval(loadLogs, 60000);
+setInterval(loadOverview,30000);
+setInterval(marketStatus,30000);
+setInterval(loadLogs,60000);
 </script>
 </body>
 </html>
