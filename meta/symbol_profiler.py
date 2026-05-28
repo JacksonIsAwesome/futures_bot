@@ -344,8 +344,16 @@ Respond ONLY with a valid JSON object, no explanation, no markdown, no backticks
             response.raise_for_status()
             raw = response.json()["content"][0]["text"].strip()
 
-            # parse the JSON response
-            profile = json.loads(raw)
+          # strip markdown code fences if Claude wraps response despite instructions
+          if raw.startswith('```'):
+              lines = raw.split('\n')
+              lines = lines[1:]  # drop ```json line
+              if lines and lines[-1].strip() == '```':
+                  lines = lines[:-1]  # drop closing ```
+              raw = '\n'.join(lines).strip()
+
+          # parse the JSON response
+          profile = json.loads(raw)
 
             # validate all required keys are present
             required = ["atr_stop_mult", "atr_tp_mult", "breakeven_mult",
