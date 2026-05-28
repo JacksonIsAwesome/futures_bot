@@ -1,7 +1,5 @@
 """
 dashboard/app.py — Flask API + Dashboard Server for AlphaBot
-Serves the HTML dashboard and REST API endpoints.
-Deploy as a separate Railway service.
 """
 
 import os
@@ -120,6 +118,8 @@ def get_config():
             'ROC_MIN_SHORT':      -0.08,
             'VWAP_DEV_MULT':      1.5,
             'VOL_ACCEL_MULT':     1.8,
+            # ── Flip confirmation ─────────────────────────────
+            'FLIP_MIN_SIGNALS':   1,
             # ── Risk ──────────────────────────────────────────
             'SIMULATED_LEVERAGE': 10,
             'MAX_DAILY_LOSS_PCT': 0.30,
@@ -130,10 +130,10 @@ def get_config():
             'BREAKEVEN_ATR_MULT': 0.75,
             'STARTING_CAPITAL':   2000.0,
             # ── Session controls ──────────────────────────────
-            'CLOSE_EOD':          1,    # 1 = close at EOD, 0 = hold overnight
-            'BLACKOUT_ENABLED':   0,    # 1 = block trades during blackout window
-            'BLACKOUT_START':     11,   # ET hour to start blackout (24h)
-            'BLACKOUT_END':       13,   # ET hour to end blackout (24h)
+            'CLOSE_EOD':          1,
+            'BLACKOUT_ENABLED':   0,
+            'BLACKOUT_START':     11,
+            'BLACKOUT_END':       13,
         }
         for k, v in overrides.items():
             if k in defaults:
