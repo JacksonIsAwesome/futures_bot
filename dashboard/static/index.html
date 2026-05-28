@@ -174,7 +174,14 @@
       </div>
       <div class="divider"></div>
       <div class="control-row">
-        <div><div class="control-label">Flip confirmation signals</div><div class="control-hint">Signals needed in new direction before re-entering after a flip (1 = instant)</div></div>
+        <div><div class="control-label">Direction flip</div><div class="control-hint">Exit current position when signals reverse direction</div></div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="ctrl-FLIP_ENABLED" onchange="toggleBool(this,'FLIP_ENABLED'); updateFlipState()">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+      <div id="flip-signals-row" class="control-row">
+        <div><div class="control-label">Flip confirmation signals</div><div class="control-hint">Signals needed in new direction before re-entering (1 = instant)</div></div>
         <input type="range" min="1" max="5" step="1" id="ctrl-FLIP_MIN_SIGNALS" oninput="updateVal(this)">
         <div class="control-value" id="val-FLIP_MIN_SIGNALS">1</div>
       </div>
@@ -415,6 +422,11 @@ async function loadConfig() {
     setSlider('VWAP_DEV_MULT',    cfg.VWAP_DEV_MULT);
     setSlider('VOL_ACCEL_MULT',   cfg.VOL_ACCEL_MULT);
     setSlider('FLIP_MIN_SIGNALS', cfg.FLIP_MIN_SIGNALS);
+    const flipEnabled = parseInt(cfg.FLIP_ENABLED ?? 1);
+    const flipEl = document.getElementById('ctrl-FLIP_ENABLED');
+    if (flipEl) flipEl.checked = flipEnabled === 1;
+    configState['FLIP_ENABLED'] = flipEnabled;
+    updateFlipState();
     setSlider('RSI_OVERBOUGHT',   cfg.RSI_OVERBOUGHT);
     setSlider('RSI_OVERSOLD',     cfg.RSI_OVERSOLD);
     setSlider('MAX_OPEN_TRADES',  cfg.MAX_OPEN_TRADES);
@@ -468,6 +480,13 @@ function updateValPct(el, realKey) {
 }
 
 function toggleBool(checkbox, key) { configState[key] = checkbox.checked ? 1 : 0; }
+
+function updateFlipState() {
+  const enabled = document.getElementById('ctrl-FLIP_ENABLED').checked;
+  const row = document.getElementById('flip-signals-row');
+  row.style.opacity = enabled ? '1' : '0.4';
+  row.style.pointerEvents = enabled ? 'auto' : 'none';
+}
 
 function updateBlackoutState() {
   const enabled = document.getElementById('ctrl-BLACKOUT_ENABLED').checked;
