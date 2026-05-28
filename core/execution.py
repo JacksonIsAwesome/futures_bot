@@ -1,12 +1,5 @@
 """
 core/execution.py — Trade Execution via Alpaca Paper API
-
-Places market orders for QQQ/NVDA with simulated leverage.
-The leverage multiplier makes paper P&L behave like futures —
-if QQQ moves 1%, with 10x leverage the bot treats it as 10%.
-
-CRITICAL SAFETY: verifies DB side before every close.
-Phantom short/long mismatches are impossible.
 """
 
 import logging
@@ -37,13 +30,7 @@ class ExecutionEngine:
         )
 
     def enter_trade(self, signal, qty: float) -> str:
-        """
-        Open a new position via Alpaca paper trading.
-        qty = number of shares (fractional supported).
-        Returns trade_id on success, None on failure.
-        """
         side = "buy" if signal.direction == "long" else "sell"
-
         order_payload = {
             "symbol":        signal.symbol,
             "qty":           str(round(qty, 2)),
@@ -51,7 +38,6 @@ class ExecutionEngine:
             "type":          "market",
             "time_in_force": "day"
         }
-
         try:
             r = self._session.post(
                 f"{ALPACA_TRADE_URL}/orders",
@@ -59,10 +45,8 @@ class ExecutionEngine:
                 timeout=10
             )
             r.raise_for_status()
-
             data       = r.json()
             fill_price = float(data.get("filled_avg_price") or signal.price)
-
             trade_id = open_trade(
                 symbol=signal.symbol,
                 side=signal.direction,
@@ -73,7 +57,6 @@ class ExecutionEngine:
                 signal_score=signal.score,
                 signal_id=signal.signal_id
             )
-
             exposure = fill_price * qty * config.SIMULATED_LEVERAGE
             log.info(
                 f"[EXEC] 🟢 OPEN {signal.direction.upper()} {signal.symbol} "
@@ -83,7 +66,6 @@ class ExecutionEngine:
                 f"id={trade_id}"
             )
             return trade_id
-
         except requests.exceptions.HTTPError as e:
             try:
                 alpaca_error = r.json()
@@ -94,32 +76,19 @@ class ExecutionEngine:
                 f"HTTP {r.status_code} — {alpaca_error}"
             )
             return None
-
         except Exception as e:
             log.error(f"[EXEC] Failed to enter {signal.symbol}: {e}")
             return None
 
     def exit_trade(self, trade_id: str, symbol: str,
                    current_price: float, reason: str):
-        """
-        Close an existing position using DELETE /positions/{symbol}.
-
-        Uses Alpaca's close-position endpoint instead of placing a sell order.
-        This correctly handles fractional long positions without triggering
-        the 422 'fractional orders cannot be sold short' error.
-
-        CRITICAL SAFETY CHECK: looks up actual open trade in DB
-        before placing any order. Verifies trade_id matches.
-        """
         db_trade = get_open_trade_for_symbol(symbol)
-
         if db_trade is None:
             log.error(
                 f"[EXEC] EXIT BLOCKED — no open DB trade for {symbol} "
                 f"(id={trade_id}). Skipping."
             )
             return None
-
         if db_trade["id"] != trade_id:
             log.error(
                 f"[EXEC] EXIT BLOCKED — id mismatch for {symbol}. "
@@ -132,8 +101,7 @@ class ExecutionEngine:
         entry_price = db_trade["entry_price"]
 
         try:
-            # cancel any existing open orders for this symbol first
-            # bracket stop orders cause wash trade 403 errors on market exits
+            # cancel existing orders first
             try:
                 cancel_r = self._session.delete(
                     f"{ALPACA_TRADE_URL}/orders",
@@ -147,9 +115,6 @@ class ExecutionEngine:
             except Exception as cancel_err:
                 log.warning(f"[EXEC] Could not cancel existing orders for {symbol}: {cancel_err}")
 
-            # use DELETE /positions/{symbol} — closes the full position at market
-            # handles fractional shares correctly for both longs and shorts
-            # avoids the 422 "fractional orders cannot be sold short" error
             r = self._session.delete(
                 f"{ALPACA_TRADE_URL}/positions/{symbol}",
                 timeout=10
@@ -165,7 +130,6 @@ class ExecutionEngine:
                 raw_pnl = (float(entry_price) - fill_price) * qty
 
             leveraged_pnl = raw_pnl * config.SIMULATED_LEVERAGE
-
             close_trade(trade_id, fill_price, reason)
 
             from core.database import get_conn
@@ -190,26 +154,26 @@ class ExecutionEngine:
             )
             return leveraged_pnl
 
-            except requests.exceptions.HTTPError as e:
-                try:
-                    alpaca_error = r.json()
-                except Exception:
-                    alpaca_error = r.text
+        except requests.exceptions.HTTPError as e:
+            try:
+                alpaca_error = r.json()
+            except Exception:
+                alpaca_error = r.text
 
-                if r.status_code == 404:
-                    # Position doesn't exist in Alpaca — close it in DB anyway
-                    log.warning(
-                        f"[EXEC] {symbol} not found in Alpaca (404) — "
-                        f"closing DB trade {trade_id} as orphan"
-                    )
-                    close_trade(trade_id, float(entry_price), "orphan_404")
-                    return 0.0
-
-                log.error(
-                    f"[EXEC] Failed to exit {symbol} (close position): "
-                    f"HTTP {r.status_code} — {alpaca_error}"
+            if r.status_code == 404:
+                # Position gone from Alpaca — close DB trade as orphan
+                log.warning(
+                    f"[EXEC] {symbol} not found in Alpaca (404) — "
+                    f"closing DB trade {trade_id} as orphan"
                 )
-                return None
+                close_trade(trade_id, float(entry_price), "orphan_404")
+                return 0.0
+
+            log.error(
+                f"[EXEC] Failed to exit {symbol} (close position): "
+                f"HTTP {r.status_code} — {alpaca_error}"
+            )
+            return None
 
         except Exception as e:
             log.error(f"[EXEC] Failed to exit {symbol}: {e}")
@@ -223,12 +187,7 @@ class ExecutionEngine:
         for trade in open_trades:
             symbol = trade["symbol"]
             current_price = float(trade["entry_price"])
-            self.exit_trade(
-                trade["id"],
-                symbol,
-                current_price,
-                reason
-            )
+            self.exit_trade(trade["id"], symbol, current_price, reason)
         log.info(f"[EXEC] All positions closed ({reason})")
 
     def get_account(self):
