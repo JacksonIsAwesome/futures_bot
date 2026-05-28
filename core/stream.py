@@ -133,10 +133,11 @@ class CandleBuilder:
         self.atr_period = atr_period
 
         # completed candle history for ATR calculation
-        self._candle_highs   = deque(maxlen=atr_period + 5)
-        self._candle_lows    = deque(maxlen=atr_period + 5)
-        self._candle_closes  = deque(maxlen=atr_period + 5)
-        self._candle_volumes = deque(maxlen=atr_period + 5)  # NEW: per-candle volume
+        _candle_maxlen = max(atr_period + 5, 60)
+        self._candle_highs   = deque(maxlen=_candle_maxlen)
+        self._candle_lows    = deque(maxlen=_candle_maxlen)
+        self._candle_closes  = deque(maxlen=_candle_maxlen)
+        self._candle_volumes = deque(maxlen=_candle_maxlen)
 
         # current open candle
         self._candle_open    = None
