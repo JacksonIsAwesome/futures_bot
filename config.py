@@ -36,6 +36,7 @@ ROC_MIN_LONG         = 0.08
 ROC_MIN_SHORT        = -0.08
 VWAP_DEV_MULT        = 1.5
 VOL_ACCEL_MULT       = 1.8
+FLIP_MIN_SIGNALS     = 1   # signals needed in new direction before entering after a flip
 RSI_PERIOD           = 14
 RSI_OVERBOUGHT       = 70
 RSI_OVERSOLD         = 30
