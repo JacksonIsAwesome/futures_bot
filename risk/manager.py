@@ -111,8 +111,9 @@ class RiskManager:
         key = (symbol, signal.direction)
         last_loss = self._last_loss_direction.get(key, 0)
         elapsed = time.time() - last_loss
-        if elapsed < LOSS_DIRECTION_COOLDOWN:
-            mins_left = int((LOSS_DIRECTION_COOLDOWN - elapsed) / 60)
+        loss_cooldown = int(get_config_override("LOSS_COOLDOWN_MINS", getattr(config, "LOSS_COOLDOWN_MINS", 20))) * 60
+        if elapsed < loss_cooldown:
+            mins_left = int((loss_cooldown - elapsed) / 60)
             return False, f"Loss cooldown: {signal.direction} {symbol} blocked {mins_left}m"
         if not self.flip_reconfirmed(symbol):
             return False, f"Waiting for flip reconfirmation on {symbol}"
@@ -151,7 +152,8 @@ class RiskManager:
     def record_loss(self, symbol, direction):
         key = (symbol, direction)
         self._last_loss_direction[key] = time.time()
-        log.info(f"[RISK] Loss recorded {direction} {symbol} — blocked {LOSS_DIRECTION_COOLDOWN//60}min")
+        cooldown_mins = int(get_config_override("LOSS_COOLDOWN_MINS", getattr(config, "LOSS_COOLDOWN_MINS", 20)))
+        log.info(f"[RISK] Loss recorded {direction} {symbol} — blocked {cooldown_mins}min")
 
     def calculate_position_size(self, symbol, signal) -> float:
         max_pct        = float(get_config_override("MAX_POSITION_PCT", config.MAX_POSITION_PCT))
