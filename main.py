@@ -165,7 +165,8 @@ class AlphaBot:
         # Does NOT set _last_exit — flip re-entries use their own
         # confirmation counter (FLIP_MIN_SIGNALS) instead of the
         # 30-minute regular cooldown.
-        if self.risk.should_flip_exit(symbol, signal.direction):
+        flip_enabled = int(get_config_override("FLIP_ENABLED", getattr(config, "FLIP_ENABLED", 1)))
+        if flip_enabled and self.risk.should_flip_exit(symbol, signal.direction):
             existing = get_open_trade_for_symbol(symbol)
             if existing:
                 log.info(
