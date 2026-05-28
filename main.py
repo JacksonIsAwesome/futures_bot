@@ -1,5 +1,5 @@
 """
-main.py — AlphaBot Main Loop
+main.py — AlphaBot Main Loop v3
 """
 
 import time
@@ -49,10 +49,12 @@ class AlphaBot:
         self.profiler  = SymbolProfiler()
 
         self._last_slow         = {}
-        self._last_exit         = {}   # tracks regular exits (stops/TP) for 30min cooldown
-        self._last_flip         = {}   # tracks flip exits for short cooldown
-        self._flip_direction    = {}   # what direction we flipped TO
-        self._flip_signal_count = {}   # how many confirming signals seen since flip
+        self._last_exit         = {}
+        self._last_flip         = {}
+        self._flip_direction    = {}
+        self._flip_signal_count = {}
+        # Fast scan: symbol -> timestamp to scan fast until
+        self._fast_scan_until   = {}
         self._scan_count        = 0
         self.COOLDOWN_SEC       = 30 * 60
         self._last_date         = date.today()
@@ -108,7 +110,7 @@ class AlphaBot:
         start = int(get_config_override("BLACKOUT_START", 11))
         end   = int(get_config_override("BLACKOUT_END",   13))
         if now.hour >= start and now.hour < end:
-            log.debug(f"[MAIN] Blackout active ({start}:00–{end}:00 ET) — no new entries")
+            log.debug(f"[MAIN] Blackout active ({start}:00–{end}:00 ET)")
             return True
         return False
 
@@ -123,6 +125,7 @@ class AlphaBot:
             self._last_date         = today
             self._flip_direction    = {}
             self._flip_signal_count = {}
+            self._fast_scan_until   = {}
 
     # ── Slow loop — signal evaluation ─────────────────────────
 
@@ -137,12 +140,9 @@ class AlphaBot:
             updated = cache.get("updated_at")
             if updated:
                 age = (datetime.utcnow() - updated).total_seconds()
-                log.warning(
-                    f"[DATA] {symbol} data is stale — "
-                    f"last tick was {age:.1f}s ago. Skipping."
-                )
+                log.warning(f"[DATA] {symbol} stale — {age:.1f}s ago. Skipping.")
             else:
-                log.warning(f"[DATA] {symbol} data is stale — no ticks yet. Skipping.")
+                log.warning(f"[DATA] {symbol} stale — no ticks yet. Skipping.")
             return
 
         if self._is_blackout():
@@ -154,80 +154,66 @@ class AlphaBot:
                 self.strategy.on_tick(symbol, cache["volume"], candle_minute)
 
         elapsed = self.stream.get_elapsed_seconds(symbol)
-        candles = self.stream.get_candles(symbol, n=25)
+
+        # Request 50 candles — MACD needs slow+signal+2 = 37 minimum
+        candles = self.stream.get_candles(symbol, n=50)
         signal  = self.strategy.evaluate(symbol, cache, candles, elapsed_seconds=elapsed)
+
+        # Always update momentum state for dynamic TP
+        if signal is not None:
+            self.risk.update_momentum(symbol, signal.momentum_score)
 
         if signal is None or signal.direction is None:
             return
 
+        # ── Activate fast scan on strong signals ──────────────
+        fast_enabled   = int(get_config_override("FAST_SCAN_ENABLED",   getattr(config, "FAST_SCAN_ENABLED",   1)))
+        fast_threshold = int(get_config_override("FAST_SCAN_SCORE",     getattr(config, "FAST_SCAN_SCORE",     5)))
+        if fast_enabled and signal.score >= fast_threshold:
+            self._fast_scan_until[symbol] = time.time() + 300  # 5 min fast scan window
+            log.debug(f"[MAIN] {symbol} fast scan activated (base_score={signal.score})")
+
         # ── Direction flip detection ──────────────────────────
-        # Exits the current position if signals have flipped direction.
-        # Does NOT set _last_exit — flip re-entries use their own
-        # confirmation counter (FLIP_MIN_SIGNALS) instead of the
-        # 30-minute regular cooldown.
         flip_enabled = int(get_config_override("FLIP_ENABLED", getattr(config, "FLIP_ENABLED", 1)))
         if flip_enabled and self.risk.should_flip_exit(symbol, signal.direction):
             existing = get_open_trade_for_symbol(symbol)
             if existing:
                 log.info(
                     f"[MAIN] 🔄 DIRECTION FLIP {symbol} — "
-                    f"exiting {existing['side']} "
-                    f"(signal flipped to {signal.direction})"
+                    f"exiting {existing['side']} → {signal.direction}"
                 )
                 self.execution.exit_trade(
-                    existing["id"],
-                    symbol,
-                    cache["price"],
-                    "direction_flip"
+                    existing["id"], symbol, cache["price"], "direction_flip"
                 )
                 self.risk.record_flip_exit(symbol)
-                # Track flip state for confirmation — do NOT set _last_exit
-                # so the 30-min cooldown doesn't block the re-entry
                 self._last_flip[symbol]         = time.time()
                 self._flip_direction[symbol]    = signal.direction
                 self._flip_signal_count[symbol] = 0
             return
 
         # ── Post-flip confirmation gate ───────────────────────
-        # After a flip exit, require FLIP_MIN_SIGNALS consecutive signals
-        # in the new direction before entering. Replaces the old 60s
-        # hardcoded cooldown + 30min COOLDOWN_SEC lockout.
-        #
-        # FLIP_MIN_SIGNALS = 1 → enter on the very next signal (fastest)
-        # FLIP_MIN_SIGNALS = 2 → need 2 signals (~2 minutes)
-        # FLIP_MIN_SIGNALS = 3 → need 3 signals (~3 minutes)
         last_flip = self._last_flip.get(symbol, 0)
         if last_flip > 0:
             flip_min = int(get_config_override(
-                "FLIP_MIN_SIGNALS",
-                getattr(config, "FLIP_MIN_SIGNALS", 1)
+                "FLIP_MIN_SIGNALS", getattr(config, "FLIP_MIN_SIGNALS", 1)
             ))
             flip_dir = self._flip_direction.get(symbol)
 
             if signal.direction == flip_dir:
-                # Signal matches the flip direction — count it
                 count = self._flip_signal_count.get(symbol, 0) + 1
                 self._flip_signal_count[symbol] = count
-                log.info(
-                    f"[MAIN] {symbol} post-flip confirmation "
-                    f"{count}/{flip_min} ({signal.direction})"
-                )
+                log.info(f"[MAIN] {symbol} post-flip confirmation {count}/{flip_min}")
                 if count < flip_min:
-                    return  # not enough confirmations yet
-                # Enough confirmations — clear flip state, proceed to entry
-                log.info(
-                    f"[MAIN] {symbol} flip confirmed ({count}/{flip_min}) — entering {signal.direction}"
-                )
+                    return
+                log.info(f"[MAIN] {symbol} flip confirmed — entering {signal.direction}")
                 self._last_flip[symbol]         = 0
                 self._flip_signal_count[symbol] = 0
                 self._flip_direction[symbol]    = None
-                # Fall through to entry below
             else:
-                # Signal flipped back the other way — reset counter
                 self._flip_signal_count[symbol] = 0
                 return
 
-        # ── Regular exit cooldown (stops/TP only, not flips) ──
+        # ── Regular exit cooldown ─────────────────────────────
         last_exit = self._last_exit.get(symbol, 0)
         if time.time() - last_exit < self.COOLDOWN_SEC:
             mins_left = int((self.COOLDOWN_SEC - (time.time() - last_exit)) / 60)
@@ -271,11 +257,7 @@ class AlphaBot:
             if action == "close":
                 trade = next((t for t in open_trades if t["id"] == trade_id), None)
                 if trade:
-                    self.execution.exit_trade(
-                        trade_id, trade["symbol"], price, reason
-                    )
-                    # Only set _last_exit for regular exits (not flips)
-                    # Flip exits are handled in _run_slow_loop
+                    self.execution.exit_trade(trade_id, trade["symbol"], price, reason)
                     self._last_exit[trade["symbol"]] = time.time()
                     if reason == "stop":
                         self.risk.record_loss(trade["symbol"], trade["side"])
@@ -286,6 +268,7 @@ class AlphaBot:
         self._scan_count += 1
         self._check_new_day()
 
+        # ── End of day close ──────────────────────────────────
         if self._is_end_of_day():
             if not self._eod_closed:
                 close_eod = int(get_config_override("CLOSE_EOD", 1))
@@ -300,20 +283,33 @@ class AlphaBot:
                 self._eod_closed = True
             return
 
+        # ── Fast loop (every scan) ────────────────────────────
         if self._is_market_open():
             self._run_fast_loop()
 
+        # ── Slow loop — interval adapts per symbol ────────────
         if self._is_market_open():
             now = time.time()
+            fast_enabled  = int(get_config_override("FAST_SCAN_ENABLED",  getattr(config, "FAST_SCAN_ENABLED",  1)))
+            fast_interval = int(get_config_override("FAST_SCAN_INTERVAL", getattr(config, "FAST_SCAN_INTERVAL", 20)))
+
             for symbol in SYMBOLS:
                 last = self._last_slow.get(symbol, 0)
-                if now - last >= 60:
+
+                # Determine interval — fast if in breakout window
+                fast_until = self._fast_scan_until.get(symbol, 0)
+                is_fast    = fast_enabled and now < fast_until
+                interval   = fast_interval if is_fast else 60
+
+                if now - last >= interval:
                     self._run_slow_loop(symbol)
                     self._last_slow[symbol] = now
 
+        # ── Manual meta brain trigger ─────────────────────────
         if self._scan_count % 12 == 0:
             self._check_meta_flag()
 
+        # ── Status log ────────────────────────────────────────
         log_interval = 50 if self._is_market_open() else 60
         if self._scan_count % log_interval == 0:
             open_trades  = get_open_trades()
@@ -340,7 +336,7 @@ class AlphaBot:
             from core.database import get_config_override, set_config_override
             flag = get_config_override("RUN_META_NOW", None)
             if flag == "true":
-                log.info("[MAIN] Manual meta brain review requested from dashboard...")
+                log.info("[MAIN] Manual meta brain review requested...")
                 set_config_override("RUN_META_NOW", "false")
                 upsert_daily_summary()
                 self.meta.run_review()
@@ -357,13 +353,11 @@ class AlphaBot:
                 self._scan()
                 schedule.run_pending()
                 time.sleep(SCAN_INTERVAL_SEC)
-
             except KeyboardInterrupt:
                 log.info("[MAIN] Shutting down...")
                 self.stream.stop()
                 self.execution.close_all_positions("shutdown")
                 break
-
             except Exception as e:
                 log.error(f"[MAIN] Scan error: {e}", exc_info=True)
                 time.sleep(10)
