@@ -134,7 +134,7 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
 <div id="tab-signals" class="content">
   <div class="panel">
     <div class="panel-header"><div class="panel-title"><i class="ti ti-radar"></i> Signal Log — Last 100</div><button class="refresh-btn" onclick="loadSignals()"><i class="ti ti-refresh"></i> Refresh</button></div>
-    <div class="panel-body" style="padding:0"><table class="data-table"><thead><tr><th>Time</th><th>Symbol</th><th>Direction</th><th>Base</th><th>EMA</th><th>VWAP</th><th>VOL</th><th>RSI</th><th>DEV</th><th>Traded</th></tr></thead><tbody id="signals-body"><tr><td colspan="10" class="empty-state">No signals yet</td></tr></tbody></table></div>
+    <div class="panel-body" style="padding:0"><table class="data-table"><thead><tr><th>Time</th><th>Symbol</th><th>Dir</th><th>Base</th><th>Mom</th><th>EMA</th><th>VWAP</th><th>VOL</th><th>RSI</th><th>DEV</th><th>ROC</th><th>MACD</th><th>CC</th><th>MTF</th><th>Traded</th></tr></thead><tbody id="signals-body"><tr><td colspan="15" class="empty-state">No signals yet</td></tr></tbody></table></div>
   </div>
 </div>
 
@@ -160,6 +160,17 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
         <div><div class="ctrl-label">Prime time ends</div><div class="ctrl-hint">Hour (ET) when prime score switches to regular</div></div>
         <input type="range" min="10" max="13" step="1" id="ctrl-PRIME_END_HOUR" oninput="updateVal(this)">
         <div class="ctrl-val" id="val-PRIME_END_HOUR">11</div>
+      </div>
+      <div class="divider"></div>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">EMA fast period</div><div class="ctrl-hint">Short EMA — crosses above slow to confirm direction</div></div>
+        <input type="range" min="5" max="15" step="1" id="ctrl-EMA_FAST" oninput="updateVal(this)">
+        <div class="ctrl-val" id="val-EMA_FAST">9</div>
+      </div>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">EMA slow period</div><div class="ctrl-hint">Long EMA — baseline trend filter</div></div>
+        <input type="range" min="15" max="50" step="1" id="ctrl-EMA_SLOW" oninput="updateVal(this)">
+        <div class="ctrl-val" id="val-EMA_SLOW">21</div>
       </div>
       <div class="divider"></div>
       <div class="ctrl-row">
@@ -220,6 +231,12 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
         <input type="range" min="0.25" max="2.0" step="0.05" id="ctrl-BREAKEVEN_ATR_MULT" oninput="updateVal(this)">
         <div class="ctrl-val" id="val-BREAKEVEN_ATR_MULT">0.75</div>
       </div>
+      <div class="divider"></div>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">Loss direction cooldown</div><div class="ctrl-hint">After a stop loss, block same direction for X mins</div></div>
+        <input type="range" min="5" max="60" step="5" id="ctrl-LOSS_COOLDOWN_MINS" oninput="updateVal(this,'m')">
+        <div class="ctrl-val" id="val-LOSS_COOLDOWN_MINS">20m</div>
+      </div>
     </div>
   </div>
 
@@ -238,6 +255,11 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
           <div class="ctrl-val" id="val-MOMENTUM_GATE_MIN">2</div>
         </div>
         <div class="divider"></div>
+        <div class="ctrl-row">
+          <div><div class="ctrl-label">ROC period (candles)</div><div class="ctrl-hint">How many candles back to measure price acceleration</div></div>
+          <input type="range" min="2" max="8" step="1" id="ctrl-ROC_PERIOD" oninput="updateVal(this)">
+          <div class="ctrl-val" id="val-ROC_PERIOD">3</div>
+        </div>
         <div class="ctrl-row">
           <div><div class="ctrl-label">ROC min long %</div><div class="ctrl-hint">Price must rise X% over 3 candles</div></div>
           <input type="range" min="0.02" max="0.30" step="0.01" id="ctrl-ROC_MIN_LONG" oninput="updateVal(this)">
@@ -500,15 +522,26 @@ async function loadSignals(){
   try{
     const rows=await fetch('/api/signals').then(r=>r.json());
     const sb=document.getElementById('signals-body');
-    if(!rows.length||rows.error){sb.innerHTML='<tr><td colspan="10" class="empty-state">No signals yet</td></tr>';return;}
-    const dot=v=>`<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${v?'var(--green)':'var(--text-muted)'}"></span>`;
+    if(!rows.length||rows.error){sb.innerHTML='<tr><td colspan="15" class="empty-state">No signals yet</td></tr>';return;}
+    const dot=v=>{
+      if(v===null||v===undefined)return'<span style="color:var(--text-muted);font-size:9px">—</span>';
+      return`<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${v?'var(--green)':'var(--red)'}"></span>`;
+    };
     sb.innerHTML=rows.map(s=>`<tr>
       <td style="color:var(--text-muted)">${fmtTime(s.timestamp)}</td>
       <td style="color:var(--text-primary);font-weight:500">${s.symbol}</td>
       <td>${s.direction?`<span class="badge badge-${s.direction}">${s.direction.toUpperCase()}</span>`:'<span style="color:var(--text-muted)">—</span>'}</td>
-      <td>${scorePips(s.score,5)}</td>
-      <td>${dot(s.ema_cross)}</td><td>${dot(s.vwap_side)}</td><td>${dot(s.volume_spike)}</td>
-      <td>${dot(s.rsi_confirm)}</td><td>${dot(s.price_action)}</td>
+      <td style="color:var(--cyan);font-weight:600">${s.score??'—'}/5</td>
+      <td style="color:${s.momentum_score>=2?'var(--green)':s.momentum_score===1?'var(--amber)':'var(--text-muted)'};font-weight:600">${s.momentum_score??'—'}/3</td>
+      <td>${dot(s.ema_cross)}</td>
+      <td>${dot(s.vwap_side)}</td>
+      <td>${dot(s.volume_spike)}</td>
+      <td>${dot(s.rsi_confirm)}</td>
+      <td>${dot(s.price_action)}</td>
+      <td>${dot(s.roc_confirm)}</td>
+      <td>${dot(s.macd_confirm)}</td>
+      <td>${dot(s.candle_confirm)}</td>
+      <td>${dot(s.mtf_ok)}</td>
       <td>${s.traded?'<span class="badge badge-open">TRADED</span>':'<span style="color:var(--text-muted)">—</span>'}</td>
     </tr>`).join('');
   }catch(e){console.error(e);}
@@ -530,6 +563,8 @@ async function loadConfig(){
       configState[key]=val;
     };
     // Base signals
+    s('EMA_FAST',          cfg.EMA_FAST);
+    s('EMA_SLOW',          cfg.EMA_SLOW);
     s('PRIME_BASE_MIN',    cfg.PRIME_BASE_MIN);
     s('REGULAR_BASE_MIN',  cfg.REGULAR_BASE_MIN);
     s('PRIME_END_HOUR',    cfg.PRIME_END_HOUR);
@@ -543,6 +578,7 @@ async function loadConfig(){
     s('ATR_STOP_MULT',     cfg.ATR_STOP_MULT);
     s('ATR_TP_MULT',       cfg.ATR_TP_MULT);
     s('BREAKEVEN_ATR_MULT',cfg.BREAKEVEN_ATR_MULT);
+    s('LOSS_COOLDOWN_MINS', cfg.LOSS_COOLDOWN_MINS,'m');
     const dlPct=Math.round(cfg.MAX_DAILY_LOSS_PCT*100);
     const dlEl=document.getElementById('ctrl-MAX_DAILY_LOSS_PCT_pct');
     if(dlEl)dlEl.value=dlPct;
@@ -560,6 +596,7 @@ async function loadConfig(){
     configState['MOMENTUM_GATE_ENABLED']=mgEnabled;
     dimSection('mom-controls',mgEnabled===0);
     s('MOMENTUM_GATE_MIN',           cfg.MOMENTUM_GATE_MIN);
+    s('ROC_PERIOD',                  cfg.ROC_PERIOD);
     s('ROC_MIN_LONG',                cfg.ROC_MIN_LONG);
     s('ROC_MIN_SHORT',               cfg.ROC_MIN_SHORT);
     s('MACD_FAST',                   cfg.MACD_FAST);
