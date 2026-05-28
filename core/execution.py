@@ -212,10 +212,7 @@ class ExecutionEngine:
             return
         for trade in open_trades:
             symbol = trade["symbol"]
-            cache = self._data.get_price(symbol)
-            current_price = cache.get("price") if cache else None
-            if current_price is None:
-                current_price = float(trade["entry_price"])
+            current_price = float(trade["entry_price"])
             self.exit_trade(
                 trade["id"],
                 symbol,
