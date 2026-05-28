@@ -36,6 +36,32 @@ ROC_MIN_LONG         = 0.08
 ROC_MIN_SHORT        = -0.08
 VWAP_DEV_MULT        = 1.5
 VOL_ACCEL_MULT       = 1.8
+# Momentum gate
+MOMENTUM_GATE_ENABLED       = 1
+MOMENTUM_GATE_MIN           = 2
+MACD_FAST                   = 12
+MACD_SLOW                   = 26
+MACD_SIGNAL_PERIOD          = 9
+CANDLE_CONSISTENCY_LOOKBACK = 3
+CANDLE_CONSISTENCY_MIN      = 2
+# Multi-timeframe
+MTF_FILTER_ENABLED          = 1
+MTF_EMA_PERIOD              = 21
+# Session aggression
+PRIME_BASE_MIN              = 3
+REGULAR_BASE_MIN            = 4
+PRIME_END_HOUR              = 11
+# Dynamic TP
+DYNAMIC_TP_ENABLED          = 1
+DYNAMIC_TP_EXTENSION        = 1.0
+DYNAMIC_TP_MIN_MOMENTUM     = 2
+# Faster scan
+FAST_SCAN_ENABLED           = 1
+FAST_SCAN_SCORE             = 5
+FAST_SCAN_INTERVAL          = 20
+# Direction flip
+FLIP_ENABLED                = 1
+FLIP_MIN_SIGNALS            = 1
 FLIP_MIN_SIGNALS     = 1
 FLIP_ENABLED         = 1
 FLIP_MIN_SIGNALS     = 1   # signals needed in new direction before entering after a flip
