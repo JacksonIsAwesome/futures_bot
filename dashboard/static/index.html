@@ -233,6 +233,12 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
       </div>
       <div class="divider"></div>
       <div class="ctrl-row">
+        <div><div class="ctrl-label">Min R:R ratio</div><div class="ctrl-hint">Minimum reward:risk needed to enter a trade</div></div>
+        <input type="range" min="0.8" max="2.0" step="0.1" id="ctrl-MIN_RR" oninput="updateVal(this)">
+        <div class="ctrl-val" id="val-MIN_RR">1.0</div>
+      </div>
+      <div class="divider"></div>
+      <div class="ctrl-row">
         <div><div class="ctrl-label">Loss direction cooldown</div><div class="ctrl-hint">After a stop loss, block same direction for X mins</div></div>
         <input type="range" min="5" max="60" step="5" id="ctrl-LOSS_COOLDOWN_MINS" oninput="updateVal(this,'m')">
         <div class="ctrl-val" id="val-LOSS_COOLDOWN_MINS">20m</div>
@@ -505,7 +511,7 @@ async function loadOverview(){
         <td style="color:var(--red)">$${parseFloat(t.stop_loss).toFixed(2)}</td>
         <td style="color:var(--green)">$${parseFloat(t.take_profit).toFixed(2)}</td>
         <td style="color:${t.pnl_usd>=0?'var(--green)':'var(--red)'}">${fmt(t.pnl_usd)}</td>
-        <td>${scorePips(t.signal_score,5)}</td></tr>`).join('');
+        <td>${scorePips(Math.min(t.signal_score||0,5),5)} <span style="font-size:10px;color:var(--text-muted)">${t.signal_score||0}</span>}</td></tr>`).join('');
     const rb=document.getElementById('recent-trades-body');
     rb.innerHTML=!d.recent_trades.length?'<tr><td colspan="6" class="empty-state">No closed trades yet</td></tr>'
       :d.recent_trades.map(t=>`<tr>
@@ -513,7 +519,7 @@ async function loadOverview(){
         <td><span class="badge badge-${t.side}">${t.side.toUpperCase()}</span></td>
         <td style="color:${t.pnl_usd>=0?'var(--green)':'var(--red)'};font-weight:500">${fmt(t.pnl_usd)}</td>
         <td><span class="badge ${t.exit_reason==='take_profit_extended'?'badge-open':t.status==='stopped'?'badge-stopped':'badge-closed'}">${t.exit_reason||t.status}</span></td>
-        <td>${scorePips(t.signal_score,5)}</td>
+        <td>${scorePips(Math.min(t.signal_score||0,5),5)} <span style="font-size:10px;color:var(--text-muted)">${t.signal_score||0}</span>}</td>
         <td style="color:var(--text-muted)">${fmtTime(t.exited_at)}</td></tr>`).join('');
   }catch(e){console.error(e);}
 }
@@ -579,6 +585,7 @@ async function loadConfig(){
     s('ATR_TP_MULT',       cfg.ATR_TP_MULT);
     s('BREAKEVEN_ATR_MULT',cfg.BREAKEVEN_ATR_MULT);
     s('LOSS_COOLDOWN_MINS', cfg.LOSS_COOLDOWN_MINS,'m');
+    s('MIN_RR', cfg.MIN_RR);
     const dlPct=Math.round(cfg.MAX_DAILY_LOSS_PCT*100);
     const dlEl=document.getElementById('ctrl-MAX_DAILY_LOSS_PCT_pct');
     if(dlEl)dlEl.value=dlPct;
