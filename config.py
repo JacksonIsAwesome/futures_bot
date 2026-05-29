@@ -64,6 +64,7 @@ FAST_SCAN_INTERVAL          = 20
 # Direction flip
 FLIP_ENABLED                = 1
 FLIP_MIN_SIGNALS            = 1
+FLIP_BASE_SCORE_MIN         = 3
 FLIP_MIN_SIGNALS     = 1
 FLIP_ENABLED         = 1
 FLIP_MIN_SIGNALS     = 1   # signals needed in new direction before entering after a flip
