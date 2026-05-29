@@ -100,7 +100,7 @@ PRIME_CLOSE_START    = "13:30"
 TRADE_PRIME_ONLY     = False
 
 # ── Meta Brain ───────────────────────────────────────────────
-META_REVIEW_HOUR     = 17
+META_REVIEW_HOUR     = 21  # 5pm ET during EDT (UTC-4)
 META_LOOKBACK_DAYS   = 7
 META_MIN_TRADES      = 5
 META_ADJUST_STEP     = 0.1
