@@ -301,6 +301,16 @@ Respond ONLY with a valid JSON object, no explanation, no markdown, no backticks
             log.error(f"[PROFILER] {symbol}: Claude API failed — {e}")
 
     def _save_profile(self, symbol: str, profile: dict, raw: str):
+        # Ensure the profile doesn't produce an R:R below the minimum
+        # so it can never block all trades silently
+        min_rr = getattr(config, "MIN_RR", 1.0)
+        actual_rr = profile["atr_tp_mult"] / profile["atr_stop_mult"]
+        if actual_rr < min_rr:
+            profile["atr_tp_mult"] = round(profile["atr_stop_mult"] * min_rr * 1.1, 2)
+            log.warning(
+                f"[PROFILER] {symbol} R:R too low ({actual_rr:.2f}) — "
+                f"bumping atr_tp_mult to {profile['atr_tp_mult']}x"
+            )
         with get_conn() as conn:
             cur = conn.cursor()
             cur.execute("""
