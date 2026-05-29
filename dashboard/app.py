@@ -121,7 +121,8 @@ def get_config():
             'FAST_SCAN_INTERVAL': 20,
             # ── Direction flip ─────────────────────────────────
             'FLIP_ENABLED':       1,
-            'FLIP_MIN_SIGNALS':   1,
+            'FLIP_MIN_SIGNALS':      1,
+            'FLIP_BASE_SCORE_MIN':   3,
             # ── Risk ───────────────────────────────────────────
             'SIMULATED_LEVERAGE': 10,
             'MAX_DAILY_LOSS_PCT': 0.30,
