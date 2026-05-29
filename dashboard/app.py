@@ -132,6 +132,7 @@ def get_config():
             'BREAKEVEN_ATR_MULT': 0.75,
             'STARTING_CAPITAL':   2000.0,
             'LOSS_COOLDOWN_MINS': 20,
+            'MIN_RR':             1.0,
             # ── Session controls ───────────────────────────────
             'CLOSE_EOD':          1,
             'BLACKOUT_ENABLED':   0,
