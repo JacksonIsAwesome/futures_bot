@@ -190,15 +190,48 @@ class ExecutionEngine:
         return leveraged_pnl
 
     def close_all_positions(self, reason="eod"):
-        """Close all open positions — used at end of day or shutdown."""
+        """
+        Close all open positions — used at end of day or shutdown.
+        Two-pass approach:
+          1. Close anything tracked in the DB
+          2. Nuke any remaining Alpaca positions that the DB missed (orphans)
+        """
         open_trades = get_open_trades()
-        if not open_trades:
-            return
-        for trade in open_trades:
-            symbol = trade["symbol"]
-            current_price = float(trade["entry_price"])
-            self.exit_trade(trade["id"], symbol, current_price, reason)
-        log.info(f"[EXEC] All positions closed ({reason})")
+        if open_trades:
+            for trade in open_trades:
+                symbol = trade["symbol"]
+                current_price = float(trade["entry_price"])
+                self.exit_trade(trade["id"], symbol, current_price, reason)
+            log.info(f"[EXEC] DB positions closed ({reason})")
+        else:
+            log.info(f"[EXEC] No open DB trades at EOD — checking Alpaca directly")
+
+        # Safety net: also close anything still open on Alpaca
+        # This catches orphaned positions not tracked in the DB
+        try:
+            r = self._session.delete(
+                f"{ALPACA_TRADE_URL}/positions",
+                params={"cancel_orders": "true"},
+                timeout=15
+            )
+            if r.status_code in (200, 204, 207):
+                try:
+                    closed = r.json()
+                    if isinstance(closed, list) and closed:
+                        log.info(
+                            f"[EXEC] Alpaca safety close — "
+                            f"nuked {len(closed)} orphaned position(s)"
+                        )
+                    else:
+                        log.info("[EXEC] Alpaca safety close — no orphaned positions found")
+                except Exception:
+                    log.info("[EXEC] Alpaca safety close completed")
+            elif r.status_code == 404:
+                log.info("[EXEC] Alpaca safety close — no open positions on Alpaca")
+            else:
+                log.warning(f"[EXEC] Alpaca safety close returned {r.status_code}")
+        except Exception as e:
+            log.error(f"[EXEC] Alpaca safety close failed: {e}")
 
     def get_account(self):
         """Returns Alpaca account info."""
