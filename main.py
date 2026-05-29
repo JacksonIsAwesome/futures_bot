@@ -175,7 +175,16 @@ class AlphaBot:
 
         # ── Direction flip detection ──────────────────────────
         flip_enabled = int(get_config_override("FLIP_ENABLED", getattr(config, "FLIP_ENABLED", 1)))
+        flip_min_base = int(get_config_override(
+            "FLIP_BASE_SCORE_MIN", getattr(config, "FLIP_BASE_SCORE_MIN", 3)
+        ))
         if flip_enabled and self.risk.should_flip_exit(symbol, signal.direction):
+            if signal.base_score < flip_min_base:
+                log.debug(
+                    f"[MAIN] {symbol} flip suppressed — "
+                    f"base_score={signal.base_score} < FLIP_BASE_SCORE_MIN={flip_min_base}"
+                )
+                return
             existing = get_open_trade_for_symbol(symbol)
             if existing:
                 log.info(
