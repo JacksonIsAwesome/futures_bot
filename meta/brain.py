@@ -413,11 +413,55 @@ class MetaBrain:
             "auto_adjustments_made": adjustments,
             "top_issue": issues,
             "top_win":   top_win,
-            "current_thresholds": {
-                "min_signal_score": config.MIN_SIGNAL_SCORE,
-                "volume_spike_mult": config.VOLUME_SPIKE_MULT,
-                "atr_stop_mult":    config.ATR_STOP_MULT,
-                "atr_tp_mult":      config.ATR_TP_MULT,
+            "current_config": {
+                # ── Entry gates ───────────────────────────────
+                "MIN_SIGNAL_SCORE":           get_config_override("MIN_SIGNAL_SCORE",           config.MIN_SIGNAL_SCORE),
+                "PRIME_BASE_MIN":             get_config_override("PRIME_BASE_MIN",             config.PRIME_BASE_MIN),
+                "REGULAR_BASE_MIN":           get_config_override("REGULAR_BASE_MIN",           config.REGULAR_BASE_MIN),
+                "PRIME_END_HOUR":             get_config_override("PRIME_END_HOUR",             config.PRIME_END_HOUR),
+                # ── Momentum gate ─────────────────────────────
+                "MOMENTUM_GATE_ENABLED":      get_config_override("MOMENTUM_GATE_ENABLED",      config.MOMENTUM_GATE_ENABLED),
+                "MOMENTUM_GATE_MIN":          get_config_override("MOMENTUM_GATE_MIN",          config.MOMENTUM_GATE_MIN),
+                "ROC_PERIOD":                 get_config_override("ROC_PERIOD",                 config.ROC_PERIOD),
+                "ROC_MIN_LONG":               get_config_override("ROC_MIN_LONG",               config.ROC_MIN_LONG),
+                "ROC_MIN_SHORT":              get_config_override("ROC_MIN_SHORT",              config.ROC_MIN_SHORT),
+                "MACD_FAST":                  get_config_override("MACD_FAST",                  config.MACD_FAST),
+                "MACD_SLOW":                  get_config_override("MACD_SLOW",                  config.MACD_SLOW),
+                "MACD_SIGNAL_PERIOD":         get_config_override("MACD_SIGNAL_PERIOD",         config.MACD_SIGNAL_PERIOD),
+                "CANDLE_CONSISTENCY_LOOKBACK":get_config_override("CANDLE_CONSISTENCY_LOOKBACK",config.CANDLE_CONSISTENCY_LOOKBACK),
+                "CANDLE_CONSISTENCY_MIN":     get_config_override("CANDLE_CONSISTENCY_MIN",     config.CANDLE_CONSISTENCY_MIN),
+                # ── MTF / VWAP / Volume ───────────────────────
+                "MTF_FILTER_ENABLED":         get_config_override("MTF_FILTER_ENABLED",         config.MTF_FILTER_ENABLED),
+                "MTF_EMA_PERIOD":             get_config_override("MTF_EMA_PERIOD",             config.MTF_EMA_PERIOD),
+                "VWAP_DEV_MULT":              get_config_override("VWAP_DEV_MULT",              config.VWAP_DEV_MULT),
+                "VOL_ACCEL_MULT":             get_config_override("VOL_ACCEL_MULT",             config.VOL_ACCEL_MULT),
+                "VOLUME_SPIKE_MULT":          get_config_override("VOLUME_SPIKE_MULT",          config.VOLUME_SPIKE_MULT),
+                # ── RSI ───────────────────────────────────────
+                "RSI_OVERBOUGHT":             get_config_override("RSI_OVERBOUGHT",             config.RSI_OVERBOUGHT),
+                "RSI_OVERSOLD":               get_config_override("RSI_OVERSOLD",               config.RSI_OVERSOLD),
+                # ── Stops / TP ────────────────────────────────
+                "ATR_STOP_MULT":              get_config_override("ATR_STOP_MULT",              config.ATR_STOP_MULT),
+                "ATR_TP_MULT":               get_config_override("ATR_TP_MULT",               config.ATR_TP_MULT),
+                "BREAKEVEN_ATR_MULT":         get_config_override("BREAKEVEN_ATR_MULT",         config.BREAKEVEN_ATR_MULT),
+                "MIN_RR":                     get_config_override("MIN_RR",                     config.MIN_RR),
+                # ── Risk ──────────────────────────────────────
+                "SIMULATED_LEVERAGE":         get_config_override("SIMULATED_LEVERAGE",         config.SIMULATED_LEVERAGE),
+                "MAX_DAILY_LOSS_PCT":         get_config_override("MAX_DAILY_LOSS_PCT",         config.MAX_DAILY_LOSS_PCT),
+                "MAX_OPEN_TRADES":            get_config_override("MAX_OPEN_TRADES",            config.MAX_OPEN_TRADES),
+                "MAX_POSITION_PCT":           get_config_override("MAX_POSITION_PCT",           config.MAX_POSITION_PCT),
+                "LOSS_COOLDOWN_MINS":         get_config_override("LOSS_COOLDOWN_MINS",         config.LOSS_COOLDOWN_MINS),
+                # ── Direction flip ────────────────────────────
+                "FLIP_ENABLED":               get_config_override("FLIP_ENABLED",               config.FLIP_ENABLED),
+                "FLIP_MIN_SIGNALS":           get_config_override("FLIP_MIN_SIGNALS",           config.FLIP_MIN_SIGNALS),
+                "FLIP_BASE_SCORE_MIN":        get_config_override("FLIP_BASE_SCORE_MIN",        config.FLIP_BASE_SCORE_MIN),
+                # ── Dynamic TP ────────────────────────────────
+                "DYNAMIC_TP_ENABLED":         get_config_override("DYNAMIC_TP_ENABLED",         config.DYNAMIC_TP_ENABLED),
+                "DYNAMIC_TP_EXTENSION":       get_config_override("DYNAMIC_TP_EXTENSION",       config.DYNAMIC_TP_EXTENSION),
+                "DYNAMIC_TP_MIN_MOMENTUM":    get_config_override("DYNAMIC_TP_MIN_MOMENTUM",    config.DYNAMIC_TP_MIN_MOMENTUM),
+                # ── Scan speed ────────────────────────────────
+                "FAST_SCAN_ENABLED":          get_config_override("FAST_SCAN_ENABLED",          config.FAST_SCAN_ENABLED),
+                "FAST_SCAN_SCORE":            get_config_override("FAST_SCAN_SCORE",            config.FAST_SCAN_SCORE),
+                "FAST_SCAN_INTERVAL":         get_config_override("FAST_SCAN_INTERVAL",         config.FAST_SCAN_INTERVAL),
             },
             "todays_price_action": bar_data,
         }
@@ -428,25 +472,51 @@ Here is today's full data including the complete 1-minute bar history for each s
 
 {json.dumps(data_summary, indent=2, default=float)}
 
-The bot uses 5 signals scored 0-5. A trade fires when score >= {config.MIN_SIGNAL_SCORE}.
-Signals: EMA crossover, VWAP side, volume spike, RSI confirmation, price action.
-Stop loss = ATR × {config.ATR_STOP_MULT}, Take profit = ATR × {config.ATR_TP_MULT}.
+CONFIG REFERENCE (current_config shows live values including any DB overrides):
+- MIN_SIGNAL_SCORE: base signals needed out of 5 to consider a trade
+- PRIME_BASE_MIN / REGULAR_BASE_MIN: score thresholds during prime (9:30-11am) vs rest of day
+- MOMENTUM_GATE_ENABLED/MIN: require ROC+MACD+CandleConsistency confirmation (0-3 score)
+- ROC_PERIOD/MIN_LONG/MIN_SHORT: price acceleration % needed over N candles
+- MACD_FAST/SLOW/SIGNAL_PERIOD: MACD histogram must be growing in signal direction
+- CANDLE_CONSISTENCY_LOOKBACK/MIN: N of last M candles must close in signal direction
+- MTF_FILTER_ENABLED/PERIOD: slow EMA on 1-min candles must agree with direction
+- VWAP_DEV_MULT: price must be X std devs from VWAP (breakout strength)
+- VOL_ACCEL_MULT: projected candle volume must be X× the 20-candle average
+- RSI_OVERBOUGHT/OVERSOLD: RSI gates — blocks longs near OB, shorts near OS
+- ATR_STOP_MULT: stop = entry ± (ATR × this). Wider = more room, more risk
+- ATR_TP_MULT: take profit = entry ± (ATR × this). Higher = bigger targets
+- BREAKEVEN_ATR_MULT: move stop to entry once price moves (ATR × this) in our favor
+- MIN_RR: minimum reward:risk ratio required to enter
+- SIMULATED_LEVERAGE: P&L multiplier (10x = $100 move shows as $1000)
+- MAX_DAILY_LOSS_PCT: kill switch — shuts bot down if daily loss exceeds this %
+- MAX_OPEN_TRADES: max simultaneous positions across all symbols
+- MAX_POSITION_PCT: max % of capital in one trade
+- LOSS_COOLDOWN_MINS: after a stop loss, block same symbol+direction for X minutes
+- FLIP_ENABLED: exit trade if signals reverse direction
+- FLIP_MIN_SIGNALS: # of confirming signals needed before re-entering after a flip
+- FLIP_BASE_SCORE_MIN: minimum base score the flip signal must have to trigger
+- DYNAMIC_TP_ENABLED: extend TP further if momentum still confirmed at first target
+- DYNAMIC_TP_EXTENSION: extra ATR added to TP when momentum extends it
+- FAST_SCAN_ENABLED: scan faster when a strong signal is detected
+- FAST_SCAN_SCORE/INTERVAL: score threshold and interval (seconds) for fast scan
 
 The bar data shows every 1-minute candle from today's session (time_et = Eastern Time).
 Use it to understand what actually happened in the market today and compare it to
 where the bot actually traded (see todays_trades).
 
-Write a short daily review. Keep it simple and direct. Include:
+Write a daily review. Keep it simple and direct. Include:
 1. One sentence on overall performance
-2. What the market actually did today (was it trending, choppy, big moves?)
+2. What the market actually did today (trending, choppy, big moves?)
 3. Did the bot enter at good spots or bad spots based on the bar data?
 4. What was the biggest move the bot missed and why?
 5. One specific thing the bot is doing wrong
-6. One concrete suggestion for tomorrow based on today's price action
+6. One or two concrete config changes to make tomorrow — reference exact variable
+   names from current_config and suggest specific values (e.g. "raise BREAKEVEN_ATR_MULT
+   from 1.5 to 2.0 because trades are getting shaken out too early")
 
-Keep the whole thing under 250 words. Write it like you're talking to a high school
-student who built this bot and wants to understand what's actually happening in the
-market. Be specific — reference actual prices and times from the bar data."""
+Keep the whole thing under 300 words. Write it like you're talking to a high school
+student who built this bot. Be specific — reference actual prices, times, and config
+variable names."""
 
         try:
             response = requests.post(
@@ -457,7 +527,7 @@ market. Be specific — reference actual prices and times from the bar data."""
                     "content-type":       "application/json"
                 },
                 json={
-                    "model":      "claude-haiku-4-5-20251001",
+                    "model":      "claude-sonnet-4-20250514",
                     "max_tokens": 1024,   # bumped up to handle richer analysis
                     "messages":   [{"role": "user", "content": prompt}]
                 },
