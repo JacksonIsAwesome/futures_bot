@@ -330,9 +330,15 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
         </div>
         <div id="flip-controls">
           <div class="ctrl-row">
-            <div><div class="ctrl-label">Flip confirmation signals</div><div class="ctrl-hint">Signals needed in new direction before re-entering (1 = instant)</div></div>
+            <div><div class="ctrl-label">Flip confirmation signals</div><div class="ctrl-hint">Signals needed in new direction before re-entering (1 = instant, 3 = conservative)</div></div>
             <input type="range" min="1" max="5" step="1" id="ctrl-FLIP_MIN_SIGNALS" oninput="updateVal(this)">
             <div class="ctrl-val" id="val-FLIP_MIN_SIGNALS">1</div>
+          </div>
+          <div class="divider"></div>
+          <div class="ctrl-row">
+            <div><div class="ctrl-label">Flip trigger score</div><div class="ctrl-hint">Min base score the new-direction signal must hit to trigger a flip (lower = more sensitive)</div></div>
+            <input type="range" min="1" max="5" step="1" id="ctrl-FLIP_BASE_SCORE_MIN" oninput="updateVal(this)">
+            <div class="ctrl-val" id="val-FLIP_BASE_SCORE_MIN">3</div>
           </div>
         </div>
       </div>
@@ -641,6 +647,7 @@ async function loadConfig(){
     configState['FLIP_ENABLED']=flipEnabled;
     dimSection('flip-controls',flipEnabled===0);
     s('FLIP_MIN_SIGNALS',cfg.FLIP_MIN_SIGNALS);
+    s('FLIP_BASE_SCORE_MIN', cfg.FLIP_BASE_SCORE_MIN??3);
     // Session
     const closeEod=parseInt(cfg.CLOSE_EOD??1);
     const eodEl=document.getElementById('ctrl-CLOSE_EOD');
