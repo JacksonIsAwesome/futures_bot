@@ -145,8 +145,9 @@ class RiskManager:
         if risk <= 0:
             return False, "Risk zero or negative"
         rr = reward / risk
-        if rr < 1.2:
-            return False, f"R:R too low: {rr:.2f}:1 (need 1.2:1)"
+        min_rr = float(get_config_override("MIN_RR", getattr(config, "MIN_RR", 1.0)))
+        if rr < min_rr:
+            return False, f"R:R too low: {rr:.2f}:1 (need {min_rr:.1f}:1 min)"
         return True, None
 
     def record_loss(self, symbol, direction):
