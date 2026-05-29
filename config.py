@@ -25,7 +25,8 @@ STARTING_CAPITAL     = 2000.0
 MAX_DAILY_LOSS_PCT   = 0.30
 MAX_OPEN_TRADES      = 7
 MAX_POSITION_PCT     = 0.20
-LOSS_COOLDOWN_MINS  = 20
+LOSS_COOLDOWN_MINS   = 20
+MIN_RR               = 1.0
 
 # ── Strategy thresholds (meta brain can adjust) ───────────────
 EMA_FAST             = 9
