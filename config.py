@@ -38,7 +38,12 @@ ROC_MIN_LONG         = 0.08
 ROC_MIN_SHORT        = -0.08
 VWAP_DEV_MULT        = 1.5
 VOL_ACCEL_MULT       = 1.8
-# Momentum gate
+RSI_PERIOD           = 14
+RSI_OVERBOUGHT       = 70
+RSI_OVERSOLD         = 30
+MIN_SIGNAL_SCORE     = 3
+
+# ── Momentum gate ─────────────────────────────────────────────
 MOMENTUM_GATE_ENABLED       = 1
 MOMENTUM_GATE_MIN           = 2
 MACD_FAST                   = 12
@@ -46,47 +51,36 @@ MACD_SLOW                   = 26
 MACD_SIGNAL_PERIOD          = 9
 CANDLE_CONSISTENCY_LOOKBACK = 3
 CANDLE_CONSISTENCY_MIN      = 2
-# Multi-timeframe
+
+# ── Multi-timeframe ───────────────────────────────────────────
 MTF_FILTER_ENABLED          = 1
 MTF_EMA_PERIOD              = 21
-# Session aggression
+
+# ── Session aggression ────────────────────────────────────────
 PRIME_BASE_MIN              = 3
 REGULAR_BASE_MIN            = 4
 PRIME_END_HOUR              = 11
-# Dynamic TP
+
+# ── Dynamic TP ────────────────────────────────────────────────
 DYNAMIC_TP_ENABLED          = 1
 DYNAMIC_TP_EXTENSION        = 1.0
 DYNAMIC_TP_MIN_MOMENTUM     = 2
-# Faster scan
+
+# ── Faster scan ───────────────────────────────────────────────
 FAST_SCAN_ENABLED           = 1
 FAST_SCAN_SCORE             = 5
 FAST_SCAN_INTERVAL          = 20
-# Direction flip
+
+# ── Direction flip ────────────────────────────────────────────
 FLIP_ENABLED                = 1
-FLIP_MIN_SIGNALS            = 1
-FLIP_BASE_SCORE_MIN         = 3
-FLIP_MIN_SIGNALS     = 1
-FLIP_ENABLED         = 1
-FLIP_MIN_SIGNALS     = 1   # signals needed in new direction before entering after a flip
-RSI_PERIOD           = 14
-RSI_OVERBOUGHT       = 70
-RSI_OVERSOLD         = 30
-MIN_SIGNAL_SCORE     = 3
+FLIP_MIN_SIGNALS            = 1   # signals needed in new direction before re-entering
+FLIP_BASE_SCORE_MIN         = 3   # min base score needed to trigger a flip
 
 # ── Risk / stops ─────────────────────────────────────────────
 ATR_PERIOD           = 14
 ATR_STOP_MULT        = 2.0
 ATR_TP_MULT          = 4.0
 TRAIL_AFTER_BE       = True
-
-# ATR-based breakeven trigger.
-# Stop moves to entry once price moves BREAKEVEN_ATR_MULT * ATR in our favor.
-# 0.75 = price needs to move 75% of one ATR before stop locks to entry.
-# Scales automatically per symbol — QQQ ATR ~$1.40 → trigger ~$1.05
-#                                   NVDA ATR ~$1.50 → trigger ~$1.13
-# Lower = faster breakeven, less profit needed but more premature exits
-# Higher = slower breakeven, more room to breathe but more giveback risk
-# Meta brain can adjust via DB override "BREAKEVEN_ATR_MULT"
 BREAKEVEN_ATR_MULT   = 0.75
 
 # ── Stream settings ───────────────────────────────────────────
