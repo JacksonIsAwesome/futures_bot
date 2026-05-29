@@ -196,6 +196,7 @@ class AlphaBot:
                 )
                 self.risk.record_flip_exit(symbol)
                 self._last_flip[symbol]         = time.time()
+                self._last_exit[symbol]         = time.time()  # enforce cooldown after flip exit
                 self._flip_direction[symbol]    = signal.direction
                 self._flip_signal_count[symbol] = 0
             return
