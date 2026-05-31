@@ -19,6 +19,7 @@ from core.execution     import ExecutionEngine
 from risk.manager       import RiskManager
 from strategies.ema_vwap import EMAVWAPStrategy
 from meta.brain         import MetaBrain
+from core.error_monitor  import install as install_monitor, report_error, report_scan_errors
 from meta.symbol_profiler import SymbolProfiler
 import config
 
@@ -68,6 +69,8 @@ class AlphaBot:
         log.info("[META] Meta brain initialized ✓")
 
         self.stream.start()
+        install_monitor()
+        self._consecutive_errors = 0
 
         try:
             self.profiler.run()
@@ -369,8 +372,12 @@ class AlphaBot:
                 self.execution.close_all_positions("shutdown")
                 break
             except Exception as e:
-                log.error(f"[MAIN] Scan error: {e}", exc_info=True)
+                self._consecutive_errors += 1
+                log.error(f"[MAIN] Scan error #{self._consecutive_errors}: {e}", exc_info=True)
+                report_scan_errors(self._consecutive_errors, e)
                 time.sleep(10)
+            else:
+                self._consecutive_errors = 0  # reset on successful scan
 
 
 if __name__ == "__main__":
