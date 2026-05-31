@@ -5,3 +5,4 @@ numpy==1.26.4
 schedule==1.2.2
 pytz==2024.1
 websocket-client
+twilio==9.3.3
