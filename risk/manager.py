@@ -18,6 +18,7 @@ from core.database import (
     get_config_override
 )
 import config
+from core.notifier import notify_killed
 
 log = logging.getLogger(__name__)
 
@@ -61,6 +62,10 @@ class RiskManager:
             self.killed = True
             self.kill_reason = f"Daily loss limit hit: ${daily_pnl:.2f}"
             log.warning(f"[RISK] 🔴 KILLED: {self.kill_reason}")
+            try:
+                notify_killed(self.kill_reason, daily_pnl)
+            except Exception:
+                pass
             return False
         return True
 
@@ -185,7 +190,7 @@ class RiskManager:
     def manage_open_trades(self, current_prices: dict) -> list:
         actions     = []
         open_trades = get_open_trades()
-        TRAIL_STEP  = 0.5
+        TRAIL_STEP  = float(get_config_override("TRAIL_STEP", getattr(config, "TRAIL_STEP", 0.5)))
 
         def _get_be_mult(symbol: str) -> float:
             try:
