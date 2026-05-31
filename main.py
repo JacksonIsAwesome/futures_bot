@@ -151,6 +151,11 @@ class AlphaBot:
         if self._is_blackout():
             return
 
+        # ── Pause gate ────────────────────────────────────────
+        if int(get_config_override("TRADING_PAUSED", 0)):
+            log.debug(f"[MAIN] {symbol} — trading paused, skipping entry")
+            return
+
         if cache.get("volume") is not None:
             candle_minute = self.stream.get_candle_minute(symbol)
             if candle_minute is not None:
@@ -182,10 +187,10 @@ class AlphaBot:
             "FLIP_BASE_SCORE_MIN", getattr(config, "FLIP_BASE_SCORE_MIN", 3)
         ))
         if flip_enabled and self.risk.should_flip_exit(symbol, signal.direction):
-            if signal.base_score < flip_min_base:
+            if signal.score < flip_min_base:
                 log.debug(
                     f"[MAIN] {symbol} flip suppressed — "
-                    f"base_score={signal.base_score} < FLIP_BASE_SCORE_MIN={flip_min_base}"
+                    f"base_score={signal.score} < FLIP_BASE_SCORE_MIN={flip_min_base}"
                 )
                 return
             existing = get_open_trade_for_symbol(symbol)
