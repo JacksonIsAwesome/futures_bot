@@ -82,6 +82,7 @@ ATR_STOP_MULT        = 2.0
 ATR_TP_MULT          = 4.0
 TRAIL_AFTER_BE       = True
 BREAKEVEN_ATR_MULT   = 0.75
+TRAIL_STEP           = 0.5    # trailing stop distance in ATR multiples (after breakeven)
 
 # ── Stream settings ───────────────────────────────────────────
 STREAM_STALE_SECONDS = 120
@@ -94,6 +95,7 @@ MARKET_CLOSE         = "16:00"
 PRIME_OPEN_END       = "11:30"
 PRIME_CLOSE_START    = "13:30"
 TRADE_PRIME_ONLY     = False
+TRADING_PAUSED       = 0      # set to 1 to pause new entries (existing trades still managed)
 
 # ── Meta Brain ───────────────────────────────────────────────
 META_REVIEW_HOUR     = 21  # 5pm ET during EDT (UTC-4)
