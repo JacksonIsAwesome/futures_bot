@@ -131,10 +131,12 @@ def get_config():
             'ATR_STOP_MULT':      2.0,
             'ATR_TP_MULT':        4.0,
             'BREAKEVEN_ATR_MULT': 0.75,
+            'TRAIL_STEP':         0.5,
             'STARTING_CAPITAL':   2000.0,
             'LOSS_COOLDOWN_MINS': 20,
             'MIN_RR':             1.0,
             # ── Session controls ───────────────────────────────
+            'TRADING_PAUSED':     0,
             'CLOSE_EOD':          1,
             'BLACKOUT_ENABLED':   0,
             'BLACKOUT_START':     11,
