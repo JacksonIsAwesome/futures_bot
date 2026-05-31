@@ -9,6 +9,7 @@ from core.database import (
     get_open_trade_for_symbol, get_open_trades
 )
 import config
+from core.notifier import notify_entry, notify_exit
 
 log = logging.getLogger(__name__)
 
@@ -65,6 +66,8 @@ class ExecutionEngine:
                 f"SL=${signal.stop_loss:.2f} TP=${signal.take_profit:.2f} | "
                 f"id={trade_id}"
             )
+            notify_entry(signal.symbol, signal.direction, fill_price,
+                         qty, signal.stop_loss, signal.take_profit, signal.score)
             return trade_id
         except requests.exceptions.HTTPError as e:
             try:
@@ -187,6 +190,8 @@ class ExecutionEngine:
             f"leveraged={config.SIMULATED_LEVERAGE}x → ${leveraged_pnl:.2f} | "
             f"reason={reason} | id={trade_id}"
         )
+        notify_exit(symbol, actual_side, float(entry_price), fill_price,
+                    leveraged_pnl, reason, config.SIMULATED_LEVERAGE)
         return leveraged_pnl
 
     def close_all_positions(self, reason="eod"):
