@@ -14,13 +14,20 @@ full bar data. Math still handles threshold adjustments so they're
 deterministic. Claude explains what's happening and gives suggestions.
 """
 
+import os
+import base64
 import json
 import logging
 import requests
 import psycopg2.extras
 from datetime import datetime, date, timedelta
 from core.database import get_conn, set_config_override
+from core.notifier import notify_eod_summary
 import config
+
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+GITHUB_REPO  = os.environ.get("GITHUB_REPO",  "JacksonIsAwesome/futures_bot")
+GITHUB_API   = "https://api.github.com"
 
 ANTHROPIC_API_KEY = config.ANTHROPIC_API_KEY
 
@@ -47,6 +54,22 @@ class MetaBrain:
         report   = self._write_report(stats, missed, issues, adjusts, bars)
 
         self._save_review(stats, missed, issues, adjusts, report)
+
+        # ── EOD SMS summary ───────────────────────────────────
+        try:
+            notify_eod_summary(
+                trades=stats.get("total", 0),
+                wins=stats.get("wins", 0),
+                pnl=stats.get("total_pnl", 0)
+            )
+        except Exception as e:
+            log.error(f"[META] EOD SMS failed: {e}")
+
+        # ── Commit suggestions to GitHub ──────────────────────
+        try:
+            self._write_suggestions_to_github(report, stats, str(date.today()))
+        except Exception as e:
+            log.error(f"[META] GitHub suggestions failed: {e}")
 
         log.info("[META] Daily review complete ✓")
         log.info("[META] ═══════════════════════════════════════════")
@@ -569,6 +592,108 @@ variable names."""
         report = "\n".join(header_lines)
         log.info("\n" + report)
         return report
+
+    # ── GitHub integration ───────────────────────────────────
+
+    def _fetch_github_file(self, path: str) -> str:
+        """Fetch a file from the GitHub repo. Returns content or empty string."""
+        if not GITHUB_TOKEN:
+            return ""
+        try:
+            r = requests.get(
+                f"{GITHUB_API}/repos/{GITHUB_REPO}/contents/{path}",
+                headers={"Authorization": f"token {GITHUB_TOKEN}",
+                         "Accept": "application/vnd.github.v3+json"},
+                timeout=10
+            )
+            if r.status_code == 200:
+                encoded = r.json().get("content", "")
+                return base64.b64decode(encoded).decode("utf-8")
+            log.warning(f"[META] GitHub fetch {path}: {r.status_code}")
+            return ""
+        except Exception as e:
+            log.error(f"[META] GitHub fetch failed {path}: {e}")
+            return ""
+
+    def _commit_github_file(self, path: str, content: str, message: str):
+        """Commit a file to the GitHub repo."""
+        if not GITHUB_TOKEN:
+            log.debug("[META] No GITHUB_TOKEN — skipping commit")
+            return
+        try:
+            # Get current SHA if file exists (needed for updates)
+            sha = None
+            r = requests.get(
+                f"{GITHUB_API}/repos/{GITHUB_REPO}/contents/{path}",
+                headers={"Authorization": f"token {GITHUB_TOKEN}",
+                         "Accept": "application/vnd.github.v3+json"},
+                timeout=10
+            )
+            if r.status_code == 200:
+                sha = r.json().get("sha")
+
+            payload = {
+                "message": message,
+                "content": base64.b64encode(content.encode()).decode(),
+            }
+            if sha:
+                payload["sha"] = sha
+
+            r = requests.put(
+                f"{GITHUB_API}/repos/{GITHUB_REPO}/contents/{path}",
+                headers={"Authorization": f"token {GITHUB_TOKEN}",
+                         "Accept": "application/vnd.github.v3+json"},
+                json=payload,
+                timeout=15
+            )
+            if r.status_code in (200, 201):
+                log.info(f"[META] GitHub commit ✓ — {path}")
+            else:
+                log.warning(f"[META] GitHub commit failed {path}: {r.status_code} {r.text[:100]}")
+        except Exception as e:
+            log.error(f"[META] GitHub commit error: {e}")
+
+    def _fetch_code_context(self) -> str:
+        """Fetch key strategy files from GitHub for Claude to read."""
+        files = {
+            "config.py":              "config.py",
+            "strategies/ema_vwap.py": "ema_vwap.py",
+            "risk/manager.py":        "risk/manager.py",
+        }
+        context = ""
+        for path, label in files.items():
+            code = self._fetch_github_file(path)
+            if code:
+                # Trim to avoid token overload — first 120 lines is enough
+                lines = code.split("\n")[:120]
+                context += f"\n\n### {label}\n```python\n" + "\n".join(lines) + "\n```"
+        return context
+
+    def _write_suggestions_to_github(self, claude_text: str, stats: dict, date_str: str):
+        """Ask Claude to extract concrete suggestions and commit them to GitHub."""
+        if not GITHUB_TOKEN:
+            return
+        try:
+            suggestions_md = f"""# AlphaBot Suggested Changes — {date_str}
+
+*Auto-generated by Meta Brain after market close*
+
+## Performance Summary
+- Trades: {stats.get('total', 0)} | Win rate: {stats.get('win_rate', 0):.1f}% | R:R: {stats.get('avg_rr', 0):.2f} | P&L: ${stats.get('total_pnl', 0):.2f}
+
+## Claude Analysis & Suggestions
+{claude_text}
+
+---
+*Review these suggestions before applying. Edit config.py directly or use the dashboard.*
+"""
+            self._commit_github_file(
+                "suggested_changes.md",
+                suggestions_md,
+                f"meta brain suggestions {date_str}"
+            )
+        except Exception as e:
+            log.error(f"[META] Failed to write suggestions to GitHub: {e}")
 
     def _save_review(self, stats, missed, issues, adjustments, report):
         """Save review to DB."""
