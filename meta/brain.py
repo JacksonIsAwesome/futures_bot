@@ -21,7 +21,7 @@ import logging
 import requests
 import psycopg2.extras
 from datetime import datetime, date, timedelta
-from core.database import get_conn, set_config_override
+from core.database import get_conn, set_config_override, get_config_override
 from core.notifier import notify_eod_summary
 import config
 
