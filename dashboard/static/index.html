@@ -231,6 +231,11 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
         <input type="range" min="0.25" max="2.0" step="0.05" id="ctrl-BREAKEVEN_ATR_MULT" oninput="updateVal(this)">
         <div class="ctrl-val" id="val-BREAKEVEN_ATR_MULT">0.75</div>
       </div>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">Trailing stop distance</div><div class="ctrl-hint">ATR multiples from price after breakeven triggers (smaller = tighter trail)</div></div>
+        <input type="range" min="0.25" max="2.0" step="0.25" id="ctrl-TRAIL_STEP" oninput="updateVal(this)">
+        <div class="ctrl-val" id="val-TRAIL_STEP">0.5</div>
+      </div>
       <div class="divider"></div>
       <div class="ctrl-row">
         <div><div class="ctrl-label">Min R:R ratio</div><div class="ctrl-hint">Minimum reward:risk needed to enter a trade</div></div>
@@ -391,6 +396,11 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
   <div class="ctrls-row single">
     <div class="ctrl-group">
       <h3><i class="ti ti-clock"></i> Session Controls</h3>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">Pause new entries</div><div class="ctrl-hint">Stops the bot from opening new trades — existing positions still managed</div></div>
+        <label class="toggle-switch"><input type="checkbox" id="ctrl-TRADING_PAUSED" onchange="toggleBool(this,'TRADING_PAUSED')"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+      </div>
+      <div class="divider"></div>
       <div class="ctrl-row">
         <div><div class="ctrl-label">Close all positions at end of day (3:55pm ET)</div></div>
         <label class="toggle-switch"><input type="checkbox" id="ctrl-CLOSE_EOD" onchange="toggleBool(this,'CLOSE_EOD')"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
@@ -590,6 +600,7 @@ async function loadConfig(){
     s('ATR_STOP_MULT',     cfg.ATR_STOP_MULT);
     s('ATR_TP_MULT',       cfg.ATR_TP_MULT);
     s('BREAKEVEN_ATR_MULT',cfg.BREAKEVEN_ATR_MULT);
+    s('TRAIL_STEP', cfg.TRAIL_STEP??0.5);
     s('LOSS_COOLDOWN_MINS', cfg.LOSS_COOLDOWN_MINS,'m');
     s('MIN_RR', cfg.MIN_RR);
     const dlPct=Math.round(cfg.MAX_DAILY_LOSS_PCT*100);
@@ -649,6 +660,10 @@ async function loadConfig(){
     s('FLIP_MIN_SIGNALS',cfg.FLIP_MIN_SIGNALS);
     s('FLIP_BASE_SCORE_MIN', cfg.FLIP_BASE_SCORE_MIN??3);
     // Session
+    const paused=parseInt(cfg.TRADING_PAUSED??0);
+    const pausedEl=document.getElementById('ctrl-TRADING_PAUSED');
+    if(pausedEl)pausedEl.checked=paused===1;
+    configState['TRADING_PAUSED']=paused;
     const closeEod=parseInt(cfg.CLOSE_EOD??1);
     const eodEl=document.getElementById('ctrl-CLOSE_EOD');
     if(eodEl)eodEl.checked=closeEod===1;
