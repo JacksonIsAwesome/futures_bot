@@ -1,16 +1,23 @@
 """
-risk/manager.py — Risk Manager v2
+risk/manager.py — Risk Manager v2.2
 
-Added in v2:
-  - Dynamic TP extension: when TP hits and momentum is still confirmed,
-    extends the TP by DYNAMIC_TP_EXTENSION * ATR instead of closing.
-    Lives in-memory (resets on restart) — intentional, edge case.
-  - update_momentum(): called by main.py after each signal evaluation
-    so the manager knows current momentum state per symbol.
+v2.2 changes (orphan fix):
+  - manage_open_trades() now checks min_hold_seconds before firing any
+    stop-loss or trailing stop logic. If a trade is younger than the
+    symbol's min_hold_seconds, all exit logic is skipped for that cycle.
+    This prevents orphan_404 trades where the bot tries to close a position
+    before Alpaca has fully settled the order.
+  - min_hold_seconds is read from symbol_profiles (set by the profiler).
+    Falls back to config.MIN_HOLD_SECONDS (default 60) if no profile exists.
+
+v2.1 changes:
+  - Uses ENTRY-TIME ATR stored on the trade record for breakeven/trail/
+    dynamic-TP calculations (not back-calculated from current ATR_TP_MULT).
 """
 
 import time
 import logging
+from datetime import datetime, timezone
 from core.database import (
     get_open_trades, get_open_trade_for_symbol,
     get_todays_pnl, get_todays_trade_count,
@@ -43,13 +50,9 @@ class RiskManager:
     # ── Momentum state (fed by main.py after each signal eval) ───────────────
 
     def update_momentum(self, symbol: str, momentum_score: int):
-        """
-        Called by main.py after each signal evaluation.
-        Stores momentum_score (0-3) per symbol so dynamic TP can read it.
-        """
         self._momentum_state[symbol] = (momentum_score, time.time())
 
-    # ── Daily kill switch ─────────────────────────────────────
+    # ── Daily kill switch ─────────────────────────────────────────────────────
 
     def check_daily_limits(self) -> bool:
         if self.killed:
@@ -78,7 +81,7 @@ class RiskManager:
         self._momentum_state = {}
         log.info("[RISK] Daily reset ✓")
 
-    # ── Direction flip tracking ───────────────────────────────
+    # ── Direction flip tracking ───────────────────────────────────────────────
 
     def record_flip_exit(self, symbol: str):
         self._flip_exit_time[symbol] = time.time()
@@ -106,7 +109,7 @@ class RiskManager:
             return False
         return True
 
-    # ── Trade validation ──────────────────────────────────────
+    # ── Trade validation ──────────────────────────────────────────────────────
 
     def can_trade(self, symbol, signal) -> tuple:
         if not self.check_daily_limits():
@@ -185,12 +188,40 @@ class RiskManager:
         )
         return qty
 
-    # ── Active trade management ───────────────────────────────
+    # ── Min-hold helper ───────────────────────────────────────────────────────
+
+    def _get_min_hold_seconds(self, symbol: str) -> int:
+        """
+        Read per-symbol minimum hold time from symbol_profiles.
+        Falls back to config.MIN_HOLD_SECONDS (global default: 60).
+        The profiler sets this based on orphan history and volatility.
+        """
+        try:
+            from core.database import get_conn
+            import psycopg2.extras
+            with get_conn() as conn:
+                cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+                cur.execute(
+                    "SELECT min_hold_seconds FROM symbol_profiles WHERE symbol = %s",
+                    (symbol.upper(),)
+                )
+                row = cur.fetchone()
+                if row and row["min_hold_seconds"] is not None:
+                    return int(row["min_hold_seconds"])
+        except Exception:
+            pass
+        return int(get_config_override(
+            "MIN_HOLD_SECONDS", getattr(config, "MIN_HOLD_SECONDS", 60)
+        ))
+
+    # ── Active trade management ───────────────────────────────────────────────
 
     def manage_open_trades(self, current_prices: dict) -> list:
         actions     = []
         open_trades = get_open_trades()
         TRAIL_STEP  = float(get_config_override("TRAIL_STEP", getattr(config, "TRAIL_STEP", 0.5)))
+
+        now_utc = datetime.now(timezone.utc)
 
         def _get_be_mult(symbol: str) -> float:
             try:
@@ -210,9 +241,9 @@ class RiskManager:
             return float(get_config_override("BREAKEVEN_ATR_MULT", config.BREAKEVEN_ATR_MULT))
 
         # Dynamic TP config
-        dynamic_tp_enabled  = int(get_config_override("DYNAMIC_TP_ENABLED",     getattr(config, "DYNAMIC_TP_ENABLED",     1)))
-        tp_extension        = float(get_config_override("DYNAMIC_TP_EXTENSION", getattr(config, "DYNAMIC_TP_EXTENSION",   1.0)))
-        tp_min_momentum     = int(get_config_override("DYNAMIC_TP_MIN_MOMENTUM", getattr(config, "DYNAMIC_TP_MIN_MOMENTUM", 2)))
+        dynamic_tp_enabled = int(get_config_override("DYNAMIC_TP_ENABLED",     getattr(config, "DYNAMIC_TP_ENABLED",     1)))
+        tp_extension       = float(get_config_override("DYNAMIC_TP_EXTENSION", getattr(config, "DYNAMIC_TP_EXTENSION",   1.0)))
+        tp_min_momentum    = int(get_config_override("DYNAMIC_TP_MIN_MOMENTUM", getattr(config, "DYNAMIC_TP_MIN_MOMENTUM", 2)))
 
         for trade in open_trades:
             symbol   = trade["symbol"]
@@ -227,22 +258,51 @@ class RiskManager:
             tp       = float(trade["take_profit"])
             be_set   = trade["breakeven_set"]
 
-            tp_mult = float(get_config_override("ATR_TP_MULT", config.ATR_TP_MULT))
-            if side == "long":
-                estimated_atr = abs(tp - entry) / tp_mult
+            # ── Min-hold gate — prevents orphan_404 trades ────────────────────
+            # Skip ALL stop/trail/TP logic if the trade is too young.
+            # The profiler sets min_hold_seconds per symbol based on its
+            # volatility and orphan history. Until this window expires,
+            # Alpaca may not have the position fully registered.
+            entered_at = trade.get("entered_at")
+            if entered_at is not None:
+                # entered_at is TIMESTAMPTZ — comes back from psycopg2 as
+                # a timezone-aware datetime. Compare against UTC now.
+                if entered_at.tzinfo is None:
+                    # fallback: treat as naive UTC
+                    entered_at = entered_at.replace(tzinfo=timezone.utc)
+                elapsed_secs = (now_utc - entered_at).total_seconds()
+                min_hold     = self._get_min_hold_seconds(symbol)
+                if elapsed_secs < min_hold:
+                    log.debug(
+                        f"[RISK] {symbol} ({trade_id}) in min-hold window "
+                        f"({elapsed_secs:.0f}s / {min_hold}s) — skipping stop logic"
+                    )
+                    continue
+
+            # ── Determine entry-time ATR ──────────────────────────────────────
+            # Prefer the ATR stored at trade entry (set via signal.atr).
+            # Falls back to back-calc for old trades without stored ATR.
+            stored_atr = trade.get("atr")
+            if stored_atr is not None and float(stored_atr) > 0:
+                estimated_atr = float(stored_atr)
             else:
-                estimated_atr = abs(entry - tp) / tp_mult
+                tp_mult = float(get_config_override("ATR_TP_MULT", config.ATR_TP_MULT))
+                if tp_mult <= 0:
+                    continue
+                if side == "long":
+                    estimated_atr = abs(tp - entry) / tp_mult
+                else:
+                    estimated_atr = abs(entry - tp) / tp_mult
 
             be_atr_mult    = _get_be_mult(symbol)
             be_trigger     = estimated_atr * be_atr_mult
             trail_distance = estimated_atr * TRAIL_STEP
 
-            # ── Stop loss hit ─────────────────────────────────
+            # ── Stop loss hit ─────────────────────────────────────────────────
             if side == "long" and price <= stop:
                 reason = "trail_profit" if be_set else "stop"
                 actions.append((trade_id, "close", price, reason, side))
                 log.info(f"[RISK] 🔴 STOP {symbol} @ {price:.2f} (stop={stop:.2f})")
-                # Clear any extended TP for this trade
                 self._extended_tp.pop(trade_id, None)
                 continue
 
@@ -253,85 +313,59 @@ class RiskManager:
                 self._extended_tp.pop(trade_id, None)
                 continue
 
-            # ── Take profit hit ───────────────────────────────
+            # ── Take profit hit ───────────────────────────────────────────────
             if side == "long" and price >= tp:
                 extended = self._extended_tp.get(trade_id)
-
                 if extended is not None:
-                    # Already extended — check against extended TP
                     if price < extended:
-                        continue  # still running toward extended TP
-                    else:
-                        # Hit extended TP
-                        self._extended_tp.pop(trade_id, None)
-                        actions.append((trade_id, "close", price, "take_profit_extended", side))
-                        log.info(f"[RISK] 🚀 TP EXTENDED HIT {symbol} @ {price:.2f}")
                         continue
-
+                    self._extended_tp.pop(trade_id, None)
+                    actions.append((trade_id, "close", price, "take_profit_extended", side))
+                    log.info(f"[RISK] 🚀 TP EXTENDED HIT {symbol} @ {price:.2f}")
+                    continue
                 if dynamic_tp_enabled:
                     mom_state = self._momentum_state.get(symbol, (0, 0))
-                    mom_score = mom_state[0]
-                    mom_age   = time.time() - mom_state[1]
-                    if mom_score >= tp_min_momentum and mom_age < 120:
+                    mom_score, mom_ts = mom_state
+                    if mom_score >= tp_min_momentum and (time.time() - mom_ts) < 120:
                         new_tp = round(price + estimated_atr * tp_extension, 4)
                         self._extended_tp[trade_id] = new_tp
-                        log.info(
-                            f"[RISK] 🚀 TP EXTENDED {symbol} "
-                            f"{tp:.2f} → {new_tp:.2f} "
-                            f"(momentum={mom_score}/3)"
-                        )
+                        log.info(f"[RISK] 🚀 TP EXTENDED {symbol} {tp:.2f} → {new_tp:.2f} (momentum={mom_score}/3)")
                         continue
-
                 actions.append((trade_id, "close", price, "take_profit", side))
                 log.info(f"[RISK] 🟢 TP {symbol} @ {price:.2f} (tp={tp:.2f})")
                 continue
 
             if side == "short" and price <= tp:
                 extended = self._extended_tp.get(trade_id)
-
                 if extended is not None:
                     if price > extended:
                         continue
-                    else:
-                        self._extended_tp.pop(trade_id, None)
-                        actions.append((trade_id, "close", price, "take_profit_extended", side))
-                        log.info(f"[RISK] 🚀 TP EXTENDED HIT {symbol} @ {price:.2f}")
-                        continue
-
+                    self._extended_tp.pop(trade_id, None)
+                    actions.append((trade_id, "close", price, "take_profit_extended", side))
+                    log.info(f"[RISK] 🚀 TP EXTENDED HIT {symbol} @ {price:.2f}")
+                    continue
                 if dynamic_tp_enabled:
                     mom_state = self._momentum_state.get(symbol, (0, 0))
-                    mom_score = mom_state[0]
-                    mom_age   = time.time() - mom_state[1]
-                    if mom_score >= tp_min_momentum and mom_age < 120:
+                    mom_score, mom_ts = mom_state
+                    if mom_score >= tp_min_momentum and (time.time() - mom_ts) < 120:
                         new_tp = round(price - estimated_atr * tp_extension, 4)
                         self._extended_tp[trade_id] = new_tp
-                        log.info(
-                            f"[RISK] 🚀 TP EXTENDED {symbol} "
-                            f"{tp:.2f} → {new_tp:.2f} "
-                            f"(momentum={mom_score}/3)"
-                        )
+                        log.info(f"[RISK] 🚀 TP EXTENDED {symbol} {tp:.2f} → {new_tp:.2f} (momentum={mom_score}/3)")
                         continue
-
                 actions.append((trade_id, "close", price, "take_profit", side))
                 log.info(f"[RISK] 🟢 TP {symbol} @ {price:.2f} (tp={tp:.2f})")
                 continue
 
-            # ── ATR-based breakeven ───────────────────────────
+            # ── ATR-based breakeven ───────────────────────────────────────────
             if not be_set:
                 if side == "long" and price >= entry + be_trigger:
                     set_breakeven(trade_id, entry)
-                    log.info(
-                        f"[RISK] ↗️  BREAKEVEN {symbol} — "
-                        f"stop → entry {entry:.2f} (trigger={be_trigger:.2f})"
-                    )
+                    log.info(f"[RISK] ↗️  BREAKEVEN {symbol} — stop → entry {entry:.2f} (trigger={be_trigger:.2f})")
                 elif side == "short" and price <= entry - be_trigger:
                     set_breakeven(trade_id, entry)
-                    log.info(
-                        f"[RISK] ↗️  BREAKEVEN {symbol} — "
-                        f"stop → entry {entry:.2f} (trigger={be_trigger:.2f})"
-                    )
+                    log.info(f"[RISK] ↗️  BREAKEVEN {symbol} — stop → entry {entry:.2f} (trigger={be_trigger:.2f})")
 
-            # ── Trailing stop ─────────────────────────────────
+            # ── Trailing stop ─────────────────────────────────────────────────
             elif be_set:
                 if side == "long":
                     new_stop = round(price - trail_distance, 4)
