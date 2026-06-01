@@ -19,7 +19,7 @@ from core.execution     import ExecutionEngine
 from risk.manager       import RiskManager
 from strategies.ema_vwap import EMAVWAPStrategy
 from meta.brain         import MetaBrain
-from core.error_monitor  import install as install_monitor, report_error, report_scan_errors
+from core.error_monitor  import install as install_monitor, report_scan_errors
 from meta.symbol_profiler import SymbolProfiler
 import config
 
@@ -43,7 +43,7 @@ class AlphaBot:
 
         self.data      = DataFetcher()
         self.stream    = PriceStream(symbols=SYMBOLS)
-        self.execution = ExecutionEngine(self.data)
+        self.execution = ExecutionEngine()
         self.risk      = RiskManager(STARTING_CAPITAL)
         self.strategy  = EMAVWAPStrategy()
         self.meta      = MetaBrain()
@@ -54,7 +54,6 @@ class AlphaBot:
         self._last_flip         = {}
         self._flip_direction    = {}
         self._flip_signal_count = {}
-        # Fast scan: symbol -> timestamp to scan fast until
         self._fast_scan_until   = {}
         self._scan_count        = 0
         self.COOLDOWN_SEC       = 30 * 60
@@ -63,7 +62,8 @@ class AlphaBot:
 
         log.info("[DB] Database initialized ✓")
         log.info("[DATA] Alpaca data fetcher initialized ✓")
-        log.info("[EXEC] Execution engine initialized | paper mode | leverage=10x")
+        lev = int(get_config_override("SIMULATED_LEVERAGE", config.SIMULATED_LEVERAGE))
+        log.info(f"[EXEC] Execution engine initialized | paper mode | leverage={lev}x")
         log.info(f"[RISK] Risk manager initialized | Capital: ${STARTING_CAPITAL:,.2f}")
         log.info("[STRAT] EMA/VWAP strategy loaded ✓")
         log.info("[META] Meta brain initialized ✓")
@@ -106,6 +106,7 @@ class AlphaBot:
         return now >= eod
 
     def _is_blackout(self) -> bool:
+        """Dead-zone blackout — blocks a configurable hour window mid-day."""
         enabled = int(get_config_override("BLACKOUT_ENABLED", 0))
         if not enabled:
             return False
@@ -113,7 +114,35 @@ class AlphaBot:
         start = int(get_config_override("BLACKOUT_START", 11))
         end   = int(get_config_override("BLACKOUT_END",   13))
         if now.hour >= start and now.hour < end:
-            log.debug(f"[MAIN] Blackout active ({start}:00–{end}:00 ET)")
+            log.debug(f"[MAIN] Dead-zone blackout active ({start}:00–{end}:00 ET)")
+            return True
+        return False
+
+    def _is_morning_blackout(self) -> bool:
+        """
+        Morning open blackout — blocks the first N minutes of the session.
+
+        Purpose: the market open (9:30 AM) is chaotic. Spreads are wide,
+        price discovery is noisy, and SOXL/TQQQ can move several percent
+        in a minute. The bot also needs a few candles before MACD is reliable.
+        Blocking the first 10 minutes avoids the worst of the open volatility.
+
+        Controlled from the dashboard: MORNING_BLACKOUT_ENABLED + MORNING_BLACKOUT_MINS.
+        """
+        enabled = int(get_config_override("MORNING_BLACKOUT_ENABLED", 0))
+        if not enabled:
+            return False
+        now = datetime.now(ET)
+        if now.weekday() >= 5:
+            return False
+        market_open_et   = now.replace(hour=9, minute=30, second=0, microsecond=0)
+        mins_since_open  = (now - market_open_et).total_seconds() / 60
+        blackout_mins    = int(get_config_override("MORNING_BLACKOUT_MINS", 10))
+        if 0 <= mins_since_open < blackout_mins:
+            log.debug(
+                f"[MAIN] Morning blackout active — "
+                f"{mins_since_open:.1f} / {blackout_mins} min since open"
+            )
             return True
         return False
 
@@ -129,6 +158,32 @@ class AlphaBot:
             self._flip_direction    = {}
             self._flip_signal_count = {}
             self._fast_scan_until   = {}
+
+    # ── Pre-market bar re-seed ────────────────────────────────
+
+    def _reseed_bars(self):
+        """
+        Re-fetch 5-minute bar history for all symbols before the open.
+
+        Runs at 9:25 AM ET (13:25 UTC during EDT) every weekday.
+        Without this, a bot started after market close has zero bar history,
+        so MACD returns 0.0000 for the entire first hour (needs 37 candles).
+        After this re-seed, MACD works from the very first signal at 9:30 AM.
+        """
+        now = datetime.now(ET)
+        if now.weekday() >= 5:
+            return  # skip weekends
+        log.info("[MAIN] 🌅 Pre-market bar re-seed starting...")
+        try:
+            self.stream._seed_all()
+            for sym in SYMBOLS:
+                vols = self.stream.get_candle_volumes(sym, n=20)
+                if vols:
+                    self.strategy.seed_volume_history(sym, vols)
+                    log.info(f"[MAIN] {sym} re-seeded: {len(vols)} candle volumes")
+            log.info("[MAIN] Pre-market re-seed complete ✓")
+        except Exception as e:
+            log.error(f"[MAIN] Pre-market re-seed failed: {e}")
 
     # ── Slow loop — signal evaluation ─────────────────────────
 
@@ -148,6 +203,9 @@ class AlphaBot:
                 log.warning(f"[DATA] {symbol} stale — no ticks yet. Skipping.")
             return
 
+        # ── Blackout gates ────────────────────────────────────
+        if self._is_morning_blackout():
+            return
         if self._is_blackout():
             return
 
@@ -156,18 +214,16 @@ class AlphaBot:
             log.debug(f"[MAIN] {symbol} — trading paused, skipping entry")
             return
 
-        if cache.get("volume") is not None:
-            candle_minute = self.stream.get_candle_minute(symbol)
-            if candle_minute is not None:
-                self.strategy.on_tick(symbol, cache["volume"], candle_minute)
+        # ── Feed volume tracker with accumulated current-candle volume ──
+        candle_minute = self.stream.get_candle_minute(symbol)
+        if candle_minute is not None:
+            cur_vol = self.stream.get_current_candle_volume(symbol)
+            self.strategy.on_tick(symbol, cur_vol, candle_minute)
 
         elapsed = self.stream.get_elapsed_seconds(symbol)
-
-        # Request 50 candles — MACD needs slow+signal+2 = 37 minimum
         candles = self.stream.get_candles(symbol, n=50)
         signal  = self.strategy.evaluate(symbol, cache, candles, elapsed_seconds=elapsed)
 
-        # Always update momentum state for dynamic TP
         if signal is not None:
             self.risk.update_momentum(symbol, signal.momentum_score)
 
@@ -178,19 +234,17 @@ class AlphaBot:
         fast_enabled   = int(get_config_override("FAST_SCAN_ENABLED",   getattr(config, "FAST_SCAN_ENABLED",   1)))
         fast_threshold = int(get_config_override("FAST_SCAN_SCORE",     getattr(config, "FAST_SCAN_SCORE",     5)))
         if fast_enabled and signal.score >= fast_threshold:
-            self._fast_scan_until[symbol] = time.time() + 300  # 5 min fast scan window
-            log.debug(f"[MAIN] {symbol} fast scan activated (base_score={signal.score})")
+            self._fast_scan_until[symbol] = time.time() + 300
+            log.debug(f"[MAIN] {symbol} fast scan activated (score={signal.score})")
 
         # ── Direction flip detection ──────────────────────────
-        flip_enabled = int(get_config_override("FLIP_ENABLED", getattr(config, "FLIP_ENABLED", 1)))
-        flip_min_base = int(get_config_override(
-            "FLIP_BASE_SCORE_MIN", getattr(config, "FLIP_BASE_SCORE_MIN", 3)
-        ))
+        flip_enabled  = int(get_config_override("FLIP_ENABLED", getattr(config, "FLIP_ENABLED", 1)))
+        flip_min_base = int(get_config_override("FLIP_BASE_SCORE_MIN", getattr(config, "FLIP_BASE_SCORE_MIN", 3)))
         if flip_enabled and self.risk.should_flip_exit(symbol, signal.direction):
             if signal.score < flip_min_base:
                 log.debug(
                     f"[MAIN] {symbol} flip suppressed — "
-                    f"base_score={signal.score} < FLIP_BASE_SCORE_MIN={flip_min_base}"
+                    f"score={signal.score} < FLIP_BASE_SCORE_MIN={flip_min_base}"
                 )
                 return
             existing = get_open_trade_for_symbol(symbol)
@@ -204,7 +258,7 @@ class AlphaBot:
                 )
                 self.risk.record_flip_exit(symbol)
                 self._last_flip[symbol]         = time.time()
-                self._last_exit[symbol]         = time.time()  # enforce cooldown after flip exit
+                self._last_exit[symbol]         = time.time()
                 self._flip_direction[symbol]    = signal.direction
                 self._flip_signal_count[symbol] = 0
             return
@@ -212,11 +266,8 @@ class AlphaBot:
         # ── Post-flip confirmation gate ───────────────────────
         last_flip = self._last_flip.get(symbol, 0)
         if last_flip > 0:
-            flip_min = int(get_config_override(
-                "FLIP_MIN_SIGNALS", getattr(config, "FLIP_MIN_SIGNALS", 1)
-            ))
+            flip_min = int(get_config_override("FLIP_MIN_SIGNALS", getattr(config, "FLIP_MIN_SIGNALS", 1)))
             flip_dir = self._flip_direction.get(symbol)
-
             if signal.direction == flip_dir:
                 count = self._flip_signal_count.get(symbol, 0) + 1
                 self._flip_signal_count[symbol] = count
@@ -312,13 +363,10 @@ class AlphaBot:
             fast_interval = int(get_config_override("FAST_SCAN_INTERVAL", getattr(config, "FAST_SCAN_INTERVAL", 20)))
 
             for symbol in SYMBOLS:
-                last = self._last_slow.get(symbol, 0)
-
-                # Determine interval — fast if in breakout window
+                last       = self._last_slow.get(symbol, 0)
                 fast_until = self._fast_scan_until.get(symbol, 0)
                 is_fast    = fast_enabled and now < fast_until
                 interval   = fast_interval if is_fast else 60
-
                 if now - last >= interval:
                     self._run_slow_loop(symbol)
                     self._last_slow[symbol] = now
@@ -352,7 +400,7 @@ class AlphaBot:
     def _check_meta_flag(self):
         try:
             from core.database import get_config_override, set_config_override
-            flag = get_config_override("RUN_META_NOW", None)
+            flag = get_config_override("RUN_META_NOW", "false")
             if flag == "true":
                 log.info("[MAIN] Manual meta brain review requested...")
                 set_config_override("RUN_META_NOW", "false")
@@ -364,7 +412,15 @@ class AlphaBot:
     # ── Run ───────────────────────────────────────────────────
 
     def run(self):
+        # Daily meta brain review at 5 PM ET (21:00 UTC during EDT)
         schedule.every().day.at(f"{META_REVIEW_HOUR:02d}:00").do(self._daily_review)
+
+        # Pre-market bar re-seed at 9:25 AM ET (13:25 UTC during EDT).
+        # This ensures MACD has real bar data before the opening bell.
+        # Note: 13:25 UTC = 9:25 AM EDT (summer). In winter (EST), this
+        # fires at 8:25 AM ET — still fine, bars will just be yesterday's
+        # close data which is better than nothing. Fix properly with bug #6.
+        schedule.every().day.at("13:25").do(self._reseed_bars)
 
         while True:
             try:
@@ -382,7 +438,7 @@ class AlphaBot:
                 report_scan_errors(self._consecutive_errors, e)
                 time.sleep(10)
             else:
-                self._consecutive_errors = 0  # reset on successful scan
+                self._consecutive_errors = 0
 
 
 if __name__ == "__main__":
