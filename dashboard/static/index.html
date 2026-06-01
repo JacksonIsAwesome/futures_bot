@@ -232,7 +232,7 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
         <div class="ctrl-val" id="val-BREAKEVEN_ATR_MULT">0.75</div>
       </div>
       <div class="ctrl-row">
-        <div><div class="ctrl-label">Trailing stop distance</div><div class="ctrl-hint">ATR multiples from price after breakeven triggers (smaller = tighter trail)</div></div>
+        <div><div class="ctrl-label">Trailing stop distance</div><div class="ctrl-hint">ATR multiples from price after breakeven triggers</div></div>
         <input type="range" min="0.25" max="2.0" step="0.25" id="ctrl-TRAIL_STEP" oninput="updateVal(this)">
         <div class="ctrl-val" id="val-TRAIL_STEP">0.5</div>
       </div>
@@ -335,13 +335,13 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
         </div>
         <div id="flip-controls">
           <div class="ctrl-row">
-            <div><div class="ctrl-label">Flip confirmation signals</div><div class="ctrl-hint">Signals needed in new direction before re-entering (1 = instant, 3 = conservative)</div></div>
+            <div><div class="ctrl-label">Flip confirmation signals</div><div class="ctrl-hint">Signals needed in new direction before re-entering</div></div>
             <input type="range" min="1" max="5" step="1" id="ctrl-FLIP_MIN_SIGNALS" oninput="updateVal(this)">
             <div class="ctrl-val" id="val-FLIP_MIN_SIGNALS">1</div>
           </div>
           <div class="divider"></div>
           <div class="ctrl-row">
-            <div><div class="ctrl-label">Flip trigger score</div><div class="ctrl-hint">Min base score the new-direction signal must hit to trigger a flip (lower = more sensitive)</div></div>
+            <div><div class="ctrl-label">Flip trigger score</div><div class="ctrl-hint">Min base score the new-direction signal must hit</div></div>
             <input type="range" min="1" max="5" step="1" id="ctrl-FLIP_BASE_SCORE_MIN" oninput="updateVal(this)">
             <div class="ctrl-val" id="val-FLIP_BASE_SCORE_MIN">3</div>
           </div>
@@ -396,6 +396,21 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
   <div class="ctrls-row single">
     <div class="ctrl-group">
       <h3><i class="ti ti-clock"></i> Session Controls</h3>
+
+      <!-- Morning blackout — NEW -->
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">Block first N minutes of open</div><div class="ctrl-hint">Skips trading during the chaotic 9:30 open window — prevents orphan trades and bad signals before MACD has data</div></div>
+        <label class="toggle-switch"><input type="checkbox" id="ctrl-MORNING_BLACKOUT_ENABLED" onchange="toggleBool(this,'MORNING_BLACKOUT_ENABLED'); dimSection('morning-mins',!this.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+      </div>
+      <div id="morning-mins" class="ctrl-row" style="margin-top:8px">
+        <div class="ctrl-label" style="color:var(--text-muted)">Minutes to block after 9:30 AM open</div>
+        <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-secondary)">
+          <input type="number" class="num-input" id="ctrl-MORNING_BLACKOUT_MINS" min="5" max="30" value="10" oninput="configState['MORNING_BLACKOUT_MINS']=parseInt(this.value)">
+          <span>min</span>
+        </div>
+      </div>
+      <div class="divider"></div>
+
       <div class="ctrl-row">
         <div><div class="ctrl-label">Pause new entries</div><div class="ctrl-hint">Stops the bot from opening new trades — existing positions still managed</div></div>
         <label class="toggle-switch"><input type="checkbox" id="ctrl-TRADING_PAUSED" onchange="toggleBool(this,'TRADING_PAUSED')"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
@@ -526,8 +541,8 @@ async function loadOverview(){
         <td>$${parseFloat(t.entry_price).toFixed(2)}</td>
         <td style="color:var(--red)">$${parseFloat(t.stop_loss).toFixed(2)}</td>
         <td style="color:var(--green)">$${parseFloat(t.take_profit).toFixed(2)}</td>
-        <td style="color:${t.pnl_usd>=0?'var(--green)':'var(--red)'}">${fmt(t.pnl_usd)}</td>
-        <td>${scorePips(Math.min(t.signal_score||0,5),5)} <span style="font-size:10px;color:var(--text-muted)">${t.signal_score||0}</span>}</td></tr>`).join('');
+        <td style="color:${(t.pnl_usd||0)>=0?'var(--green)':'var(--red)'}">${fmt(t.pnl_usd)}</td>
+        <td>${scorePips(Math.min(t.signal_score||0,5),5)} <span style="font-size:10px;color:var(--text-muted)">${t.signal_score||0}</span></td></tr>`).join('');
     const rb=document.getElementById('recent-trades-body');
     rb.innerHTML=!d.recent_trades.length?'<tr><td colspan="6" class="empty-state">No closed trades yet</td></tr>'
       :d.recent_trades.map(t=>`<tr>
@@ -535,7 +550,7 @@ async function loadOverview(){
         <td><span class="badge badge-${t.side}">${t.side.toUpperCase()}</span></td>
         <td style="color:${t.pnl_usd>=0?'var(--green)':'var(--red)'};font-weight:500">${fmt(t.pnl_usd)}</td>
         <td><span class="badge ${t.exit_reason==='take_profit_extended'?'badge-open':t.status==='stopped'?'badge-stopped':'badge-closed'}">${t.exit_reason||t.status}</span></td>
-        <td>${scorePips(Math.min(t.signal_score||0,5),5)} <span style="font-size:10px;color:var(--text-muted)">${t.signal_score||0}</span>}</td>
+        <td>${scorePips(Math.min(t.signal_score||0,5),5)} <span style="font-size:10px;color:var(--text-muted)">${t.signal_score||0}</span></td>
         <td style="color:var(--text-muted)">${fmtTime(t.exited_at)}</td></tr>`).join('');
   }catch(e){console.error(e);}
 }
@@ -584,7 +599,6 @@ async function loadConfig(){
       if(ve)ve.textContent=val+(suffix||'');
       configState[key]=val;
     };
-    // Base signals
     s('EMA_FAST',          cfg.EMA_FAST);
     s('EMA_SLOW',          cfg.EMA_SLOW);
     s('PRIME_BASE_MIN',    cfg.PRIME_BASE_MIN);
@@ -594,15 +608,14 @@ async function loadConfig(){
     s('VOL_ACCEL_MULT',    cfg.VOL_ACCEL_MULT);
     s('RSI_OVERBOUGHT',    cfg.RSI_OVERBOUGHT);
     s('RSI_OVERSOLD',      cfg.RSI_OVERSOLD);
-    // Risk
     s('SIMULATED_LEVERAGE', cfg.SIMULATED_LEVERAGE,'x');
     s('MAX_OPEN_TRADES',   cfg.MAX_OPEN_TRADES);
     s('ATR_STOP_MULT',     cfg.ATR_STOP_MULT);
     s('ATR_TP_MULT',       cfg.ATR_TP_MULT);
     s('BREAKEVEN_ATR_MULT',cfg.BREAKEVEN_ATR_MULT);
-    s('TRAIL_STEP', cfg.TRAIL_STEP??0.5);
-    s('LOSS_COOLDOWN_MINS', cfg.LOSS_COOLDOWN_MINS,'m');
-    s('MIN_RR', cfg.MIN_RR);
+    s('TRAIL_STEP',        cfg.TRAIL_STEP??0.5);
+    s('LOSS_COOLDOWN_MINS',cfg.LOSS_COOLDOWN_MINS,'m');
+    s('MIN_RR',            cfg.MIN_RR);
     const dlPct=Math.round(cfg.MAX_DAILY_LOSS_PCT*100);
     const dlEl=document.getElementById('ctrl-MAX_DAILY_LOSS_PCT_pct');
     if(dlEl)dlEl.value=dlPct;
@@ -613,7 +626,6 @@ async function loadConfig(){
     if(mpEl)mpEl.value=mpPct;
     document.getElementById('val-MAX_POSITION_PCT').textContent=mpPct+'%';
     configState['MAX_POSITION_PCT']=cfg.MAX_POSITION_PCT;
-    // Momentum gate
     const mgEnabled=parseInt(cfg.MOMENTUM_GATE_ENABLED??1);
     const mgEl=document.getElementById('ctrl-MOMENTUM_GATE_ENABLED');
     if(mgEl)mgEl.checked=mgEnabled===1;
@@ -628,14 +640,12 @@ async function loadConfig(){
     s('MACD_SIGNAL_PERIOD',          cfg.MACD_SIGNAL_PERIOD);
     s('CANDLE_CONSISTENCY_LOOKBACK', cfg.CANDLE_CONSISTENCY_LOOKBACK);
     s('CANDLE_CONSISTENCY_MIN',      cfg.CANDLE_CONSISTENCY_MIN);
-    // MTF
     const mtfEnabled=parseInt(cfg.MTF_FILTER_ENABLED??1);
     const mtfEl=document.getElementById('ctrl-MTF_FILTER_ENABLED');
     if(mtfEl)mtfEl.checked=mtfEnabled===1;
     configState['MTF_FILTER_ENABLED']=mtfEnabled;
     dimSection('mtf-controls',mtfEnabled===0);
     s('MTF_EMA_PERIOD',cfg.MTF_EMA_PERIOD);
-    // Dynamic TP
     const dtpEnabled=parseInt(cfg.DYNAMIC_TP_ENABLED??1);
     const dtpEl=document.getElementById('ctrl-DYNAMIC_TP_ENABLED');
     if(dtpEl)dtpEl.checked=dtpEnabled===1;
@@ -643,7 +653,6 @@ async function loadConfig(){
     dimSection('dtp-controls',dtpEnabled===0);
     s('DYNAMIC_TP_EXTENSION',    cfg.DYNAMIC_TP_EXTENSION);
     s('DYNAMIC_TP_MIN_MOMENTUM', cfg.DYNAMIC_TP_MIN_MOMENTUM);
-    // Fast scan
     const fsEnabled=parseInt(cfg.FAST_SCAN_ENABLED??1);
     const fsEl=document.getElementById('ctrl-FAST_SCAN_ENABLED');
     if(fsEl)fsEl.checked=fsEnabled===1;
@@ -651,15 +660,23 @@ async function loadConfig(){
     dimSection('fast-controls',fsEnabled===0);
     s('FAST_SCAN_SCORE',    cfg.FAST_SCAN_SCORE);
     s('FAST_SCAN_INTERVAL', cfg.FAST_SCAN_INTERVAL,'s');
-    // Flip
     const flipEnabled=parseInt(cfg.FLIP_ENABLED??1);
     const flipEl=document.getElementById('ctrl-FLIP_ENABLED');
     if(flipEl)flipEl.checked=flipEnabled===1;
     configState['FLIP_ENABLED']=flipEnabled;
     dimSection('flip-controls',flipEnabled===0);
-    s('FLIP_MIN_SIGNALS',cfg.FLIP_MIN_SIGNALS);
+    s('FLIP_MIN_SIGNALS',    cfg.FLIP_MIN_SIGNALS);
     s('FLIP_BASE_SCORE_MIN', cfg.FLIP_BASE_SCORE_MIN??3);
-    // Session
+    // Morning blackout
+    const mbEnabled=parseInt(cfg.MORNING_BLACKOUT_ENABLED??0);
+    const mbEl=document.getElementById('ctrl-MORNING_BLACKOUT_ENABLED');
+    if(mbEl)mbEl.checked=mbEnabled===1;
+    configState['MORNING_BLACKOUT_ENABLED']=mbEnabled;
+    dimSection('morning-mins',mbEnabled===0);
+    const mbMins=document.getElementById('ctrl-MORNING_BLACKOUT_MINS');
+    if(mbMins)mbMins.value=cfg.MORNING_BLACKOUT_MINS??10;
+    configState['MORNING_BLACKOUT_MINS']=cfg.MORNING_BLACKOUT_MINS??10;
+    // Other session controls
     const paused=parseInt(cfg.TRADING_PAUSED??0);
     const pausedEl=document.getElementById('ctrl-TRADING_PAUSED');
     if(pausedEl)pausedEl.checked=paused===1;
