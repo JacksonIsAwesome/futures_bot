@@ -136,6 +136,8 @@ def get_config():
             'LOSS_COOLDOWN_MINS': 20,
             'MIN_RR':             1.0,
             # ── Session controls ───────────────────────────────
+            'MORNING_BLACKOUT_ENABLED': 0,
+            'MORNING_BLACKOUT_MINS':    10,
             'TRADING_PAUSED':     0,
             'CLOSE_EOD':          1,
             'BLACKOUT_ENABLED':   0,
