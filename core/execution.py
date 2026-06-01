@@ -1,12 +1,28 @@
 """
 core/execution.py — Trade Execution via Alpaca Paper API
+
+v3.2 changes (orphan fix):
+  - exit_trade() now retries on Alpaca 404 with a 10-second wait before
+    giving up and marking the trade as orphan_404. This handles the common
+    case where a market order fills but Alpaca hasn't registered the position
+    in /positions yet (especially common in the first few seconds after market
+    open or for fractional share orders).
+  - Two-attempt flow: first DELETE → if 404, wait 10s → second DELETE →
+    only then mark orphan if still 404.
+
+v3.1 changes:
+  - SIMULATED_LEVERAGE read live via get_config_override (dashboard slider works)
+  - enter_trade passes signal.atr to open_trade so risk manager uses entry ATR
+  - data_fetcher param removed from __init__ (was unused)
 """
 
+import time
 import logging
 import requests
 from core.database import (
     open_trade, close_trade,
-    get_open_trade_for_symbol, get_open_trades
+    get_open_trade_for_symbol, get_open_trades,
+    get_config_override
 )
 import config
 from core.notifier import notify_entry, notify_exit
@@ -16,9 +32,13 @@ log = logging.getLogger(__name__)
 ALPACA_TRADE_URL = "https://paper-api.alpaca.markets/v2"
 
 
+def _leverage() -> int:
+    """Read SIMULATED_LEVERAGE live so the dashboard slider takes effect."""
+    return int(get_config_override("SIMULATED_LEVERAGE", config.SIMULATED_LEVERAGE))
+
+
 class ExecutionEngine:
-    def __init__(self, data_fetcher):
-        self._data    = data_fetcher
+    def __init__(self):
         self._session = requests.Session()
         self._session.headers.update({
             "APCA-API-KEY-ID":     config.ALPACA_API_KEY,
@@ -27,7 +47,7 @@ class ExecutionEngine:
         })
         log.info(
             f"[EXEC] Execution engine initialized | "
-            f"paper mode | leverage={config.SIMULATED_LEVERAGE}x"
+            f"paper mode | leverage={_leverage()}x"
         )
 
     def enter_trade(self, signal, qty: float) -> str:
@@ -48,6 +68,7 @@ class ExecutionEngine:
             r.raise_for_status()
             data       = r.json()
             fill_price = float(data.get("filled_avg_price") or signal.price)
+            leverage   = _leverage()
             trade_id = open_trade(
                 symbol=signal.symbol,
                 side=signal.direction,
@@ -56,13 +77,14 @@ class ExecutionEngine:
                 stop_loss=signal.stop_loss,
                 take_profit=signal.take_profit,
                 signal_score=signal.score,
-                signal_id=signal.signal_id
+                signal_id=signal.signal_id,
+                atr=signal.atr,
             )
-            exposure = fill_price * qty * config.SIMULATED_LEVERAGE
+            exposure = fill_price * qty * leverage
             log.info(
                 f"[EXEC] 🟢 OPEN {signal.direction.upper()} {signal.symbol} "
                 f"@ ${fill_price:.2f} | qty={qty:.2f} | "
-                f"exposure=${exposure:.0f} ({config.SIMULATED_LEVERAGE}x) | "
+                f"exposure=${exposure:.0f} ({leverage}x) | "
                 f"SL=${signal.stop_loss:.2f} TP=${signal.take_profit:.2f} | "
                 f"id={trade_id}"
             )
@@ -81,6 +103,17 @@ class ExecutionEngine:
             return None
         except Exception as e:
             log.error(f"[EXEC] Failed to enter {signal.symbol}: {e}")
+            return None
+
+    def _close_position_on_alpaca(self, symbol: str) -> requests.Response | None:
+        """Single attempt to close position via Alpaca DELETE. Returns response or None on network error."""
+        try:
+            return self._session.delete(
+                f"{ALPACA_TRADE_URL}/positions/{symbol}",
+                timeout=10
+            )
+        except Exception as e:
+            log.error(f"[EXEC] Network error closing {symbol}: {e}")
             return None
 
     def exit_trade(self, trade_id: str, symbol: str,
@@ -103,7 +136,7 @@ class ExecutionEngine:
         qty         = db_trade["qty"]
         entry_price = db_trade["entry_price"]
 
-        # ── cancel any pending orders for this symbol first ──────────────────
+        # ── Cancel any pending orders for this symbol first ────────────────────
         try:
             cancel_r = self._session.delete(
                 f"{ALPACA_TRADE_URL}/orders",
@@ -118,30 +151,36 @@ class ExecutionEngine:
             else:
                 log.debug(f"[EXEC] Cancelled existing orders for {symbol}")
         except Exception as cancel_err:
-            log.warning(
-                f"[EXEC] Could not cancel existing orders for {symbol}: "
-                f"{cancel_err}"
-            )
+            log.warning(f"[EXEC] Could not cancel existing orders for {symbol}: {cancel_err}")
 
-        # ── close the position on Alpaca ──────────────────────────────────────
-        try:
-            r = self._session.delete(
-                f"{ALPACA_TRADE_URL}/positions/{symbol}",
-                timeout=10
-            )
-        except Exception as e:
-            log.error(f"[EXEC] Network error closing {symbol}: {e}")
+        # ── Close position on Alpaca — with one retry on 404 ──────────────────
+        # A 404 at the first attempt usually means the market order was placed
+        # but hasn't settled into a position on Alpaca's side yet. This is
+        # common in the first few seconds after open, especially for fractional
+        # orders. Waiting 10 seconds and retrying handles this case.
+        r = self._close_position_on_alpaca(symbol)
+        if r is None:
             return None
 
-        # ── guard: only update DB if Alpaca confirmed the close ───────────────
         if r.status_code == 404:
             log.warning(
-                f"[EXEC] {symbol} not found on Alpaca (404) — "
-                f"closing DB trade {trade_id} as orphan_404"
+                f"[EXEC] {symbol} not found on Alpaca (404, attempt 1) — "
+                f"waiting 10s and retrying..."
             )
-            close_trade(trade_id, float(entry_price), "orphan_404")
-            return 0.0
+            time.sleep(10)
+            r = self._close_position_on_alpaca(symbol)
+            if r is None:
+                return None
 
+            if r.status_code == 404:
+                log.warning(
+                    f"[EXEC] {symbol} still 404 after retry — "
+                    f"closing DB trade {trade_id} as orphan_404"
+                )
+                close_trade(trade_id, float(entry_price), "orphan_404")
+                return 0.0
+
+        # ── Non-200/204 from Alpaca — don't update DB ─────────────────────────
         if r.status_code not in (200, 204):
             try:
                 alpaca_error = r.json()
@@ -167,7 +206,8 @@ class ExecutionEngine:
         else:
             raw_pnl = (float(entry_price) - fill_price) * qty
 
-        leveraged_pnl = raw_pnl * config.SIMULATED_LEVERAGE
+        leverage      = _leverage()
+        leveraged_pnl = raw_pnl * leverage
         close_trade(trade_id, fill_price, reason)
 
         from core.database import get_conn
@@ -187,20 +227,15 @@ class ExecutionEngine:
             f"[EXEC] {emoji} CLOSE {actual_side.upper()} {symbol} "
             f"@ ${fill_price:.2f} | "
             f"raw=${raw_pnl:.2f} | "
-            f"leveraged={config.SIMULATED_LEVERAGE}x → ${leveraged_pnl:.2f} | "
+            f"leveraged={leverage}x → ${leveraged_pnl:.2f} | "
             f"reason={reason} | id={trade_id}"
         )
         notify_exit(symbol, actual_side, float(entry_price), fill_price,
-                    leveraged_pnl, reason, config.SIMULATED_LEVERAGE)
+                    leveraged_pnl, reason, leverage)
         return leveraged_pnl
 
     def close_all_positions(self, reason="eod"):
-        """
-        Close all open positions — used at end of day or shutdown.
-        Two-pass approach:
-          1. Close anything tracked in the DB
-          2. Nuke any remaining Alpaca positions that the DB missed (orphans)
-        """
+        """Close all open positions — two-pass: DB trades first, then Alpaca orphan sweep."""
         open_trades = get_open_trades()
         if open_trades:
             for trade in open_trades:
@@ -211,8 +246,7 @@ class ExecutionEngine:
         else:
             log.info(f"[EXEC] No open DB trades at EOD — checking Alpaca directly")
 
-        # Safety net: also close anything still open on Alpaca
-        # This catches orphaned positions not tracked in the DB
+        # Safety net: nuke anything still open on Alpaca (orphaned positions)
         try:
             r = self._session.delete(
                 f"{ALPACA_TRADE_URL}/positions",
@@ -223,10 +257,7 @@ class ExecutionEngine:
                 try:
                     closed = r.json()
                     if isinstance(closed, list) and closed:
-                        log.info(
-                            f"[EXEC] Alpaca safety close — "
-                            f"nuked {len(closed)} orphaned position(s)"
-                        )
+                        log.info(f"[EXEC] Alpaca safety close — nuked {len(closed)} orphaned position(s)")
                     else:
                         log.info("[EXEC] Alpaca safety close — no orphaned positions found")
                 except Exception:
@@ -239,7 +270,6 @@ class ExecutionEngine:
             log.error(f"[EXEC] Alpaca safety close failed: {e}")
 
     def get_account(self):
-        """Returns Alpaca account info."""
         try:
             r = self._session.get(f"{ALPACA_TRADE_URL}/account", timeout=5)
             r.raise_for_status()
