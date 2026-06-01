@@ -96,6 +96,9 @@ PRIME_OPEN_END       = "11:30"
 PRIME_CLOSE_START    = "13:30"
 TRADE_PRIME_ONLY     = False
 TRADING_PAUSED       = 0      # set to 1 to pause new entries (existing trades still managed)
+MIN_HOLD_SECONDS         = 60   # min seconds after entry before stops can fire
+MORNING_BLACKOUT_ENABLED = 0    # toggle from dashboard
+MORNING_BLACKOUT_MINS    = 10   # minutes to block after 9:30 AM open
 
 # ── Meta Brain ───────────────────────────────────────────────
 META_REVIEW_HOUR     = 21  # 5pm ET during EDT (UTC-4)
