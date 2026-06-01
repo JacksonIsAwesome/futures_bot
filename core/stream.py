@@ -25,7 +25,10 @@ v2 additions:
   - get_candle_minute(symbol): returns the current candle's minute boundary
     as a datetime, used by the strategy's on_tick feed
 
-The strategy reads from stream.get_price(symbol).
+v2.1 additions:
+  - get_current_candle_volume(symbol): returns the ACCUMULATED volume for
+    the in-progress candle (not just the last tick's size). Used by main.py
+    to feed the volume tracker with accurate data.
 """
 
 import json
@@ -127,36 +130,32 @@ class CandleBuilder:
 
     v2: also tracks per-candle volume for the volume acceleration tracker,
     and exposes elapsed_seconds so the strategy can project intra-candle volume.
+
+    v2.1: exposes get_current_candle_volume() so main.py can feed the
+    volume tracker with the real accumulated volume rather than a single tick.
     """
 
     def __init__(self, atr_period: int = ATR_PERIOD):
         self.atr_period = atr_period
 
-        # completed candle history for ATR calculation
         _candle_maxlen = max(atr_period + 5, 60)
         self._candle_highs   = deque(maxlen=_candle_maxlen)
         self._candle_lows    = deque(maxlen=_candle_maxlen)
         self._candle_closes  = deque(maxlen=_candle_maxlen)
         self._candle_volumes = deque(maxlen=_candle_maxlen)
 
-        # current open candle
         self._candle_open    = None
         self._candle_high    = None
         self._candle_low     = None
         self._candle_close   = None
-        self._candle_volume  = 0       # NEW: accumulated volume this candle
-        self._candle_minute  = None    # which minute this candle belongs to
-        self._candle_start   = None    # NEW: wall-clock time candle opened
+        self._candle_volume  = 0
+        self._candle_minute  = None
+        self._candle_start   = None
 
         self._lock = threading.Lock()
 
     def seed_from_bars(self, highs: list, lows: list, closes: list,
                        volumes: list = None):
-        """
-        Pre-populate candle history from bar data on startup.
-        This means ATR is available immediately, not just after
-        enough 1-minute candles have built up live.
-        """
         with self._lock:
             self._candle_highs.extend(highs)
             self._candle_lows.extend(lows)
@@ -165,16 +164,11 @@ class CandleBuilder:
                 self._candle_volumes.extend(volumes)
 
     def on_tick(self, price: float, volume: int, ts: datetime) -> bool:
-        """
-        Process a new tick. Returns True if a candle just closed.
-        v2: also accumulates volume per candle and tracks candle start time.
-        """
         minute = ts.replace(second=0, microsecond=0)
         candle_closed = False
 
         with self._lock:
             if self._candle_minute is None:
-                # first tick ever — open first candle
                 self._candle_minute = minute
                 self._candle_start  = datetime.utcnow()
                 self._candle_open   = price
@@ -184,13 +178,11 @@ class CandleBuilder:
                 self._candle_volume = volume
 
             elif minute > self._candle_minute:
-                # new minute — close the previous candle
                 self._candle_highs.append(self._candle_high)
                 self._candle_lows.append(self._candle_low)
                 self._candle_closes.append(self._candle_close)
-                self._candle_volumes.append(self._candle_volume)  # NEW
+                self._candle_volumes.append(self._candle_volume)
 
-                # open new candle
                 self._candle_minute = minute
                 self._candle_start  = datetime.utcnow()
                 self._candle_open   = price
@@ -202,18 +194,16 @@ class CandleBuilder:
                 candle_closed = True
 
             else:
-                # same minute — update current candle
                 if price > self._candle_high:
                     self._candle_high = price
                 if price < self._candle_low:
                     self._candle_low = price
                 self._candle_close  = price
-                self._candle_volume += volume   # NEW: accumulate
+                self._candle_volume += volume
 
         return candle_closed
 
     def get_atr(self) -> float:
-        """Calculate ATR from completed candles."""
         with self._lock:
             h = list(self._candle_highs)
             l = list(self._candle_lows)
@@ -223,10 +213,6 @@ class CandleBuilder:
         return _atr(h, l, c, self.atr_period)
 
     def get_candles(self, n: int = 10) -> list:
-        """
-        Return the last N completed candles as a list of dicts.
-        Each dict has keys: high, low, close, volume.
-        """
         with self._lock:
             highs   = list(self._candle_highs)
             lows    = list(self._candle_lows)
@@ -249,33 +235,31 @@ class CandleBuilder:
         return candles[-n:] if len(candles) >= n else candles
 
     def get_candle_volumes(self, n: int = 20) -> list:
-        """
-        NEW: Return the last N completed candle volumes as a plain list.
-        Used to seed the VolumeAccelerationTracker on startup.
-        """
         with self._lock:
             vols = list(self._candle_volumes)
         return vols[-n:] if len(vols) >= n else vols
 
     def get_elapsed_seconds(self) -> float:
-        """
-        NEW: Return seconds elapsed since current candle opened.
-        Used by the strategy to project intra-candle volume.
-        Returns 30.0 as a safe default if candle hasn't started yet.
-        """
         with self._lock:
             if self._candle_start is None:
                 return 30.0
             elapsed = (datetime.utcnow() - self._candle_start).total_seconds()
-            return max(elapsed, 1.0)  # never return 0 to avoid division by zero
+            return max(elapsed, 1.0)
 
     def get_candle_minute(self):
-        """
-        NEW: Return the current candle's minute boundary (datetime).
-        Used by the strategy's volume acceleration tracker.
-        """
         with self._lock:
             return self._candle_minute
+
+    def get_current_candle_volume(self) -> int:
+        """
+        Return accumulated volume for the in-progress (not yet closed) candle.
+        Unlike get_candle_volumes() which returns completed candles, this gives
+        the running total for the candle currently being built from live ticks.
+        Used by main.py to feed the volume tracker with accurate data instead
+        of just the last single tick's size.
+        """
+        with self._lock:
+            return self._candle_volume
 
     def candle_count(self) -> int:
         with self._lock:
@@ -309,20 +293,15 @@ class SymbolCache:
         self.prev_high  = None
         self.prev_low   = None
 
-        # tick-based buffers
         self._closes        = deque(maxlen=200)
         self._intra_prices  = deque(maxlen=5000)
         self._intra_volumes = deque(maxlen=5000)
 
-        # candle builder for ATR + volume tracking
         self._candles = CandleBuilder(atr_period=ATR_PERIOD)
 
         self._lock = threading.Lock()
 
     def seed_from_bars(self, bars: list):
-        """
-        Seed all indicators from historical 5-min bar data on startup.
-        """
         if not bars:
             log.warning(f"[STREAM] No bars to seed {self.symbol}")
             return
@@ -354,7 +333,6 @@ class SymbolCache:
 
             self.updated_at = datetime.utcnow()
 
-        # seed candle builder WITH volumes for acceleration tracker
         self._candles.seed_from_bars(highs, lows, closes, vols)
         self.atr = self._candles.get_atr()
 
@@ -366,7 +344,6 @@ class SymbolCache:
         )
 
     def on_tick(self, price: float, volume: int, ts: datetime):
-        """Process one trade tick."""
         with self._lock:
             self.price      = price
             self.volume     = volume
@@ -408,23 +385,22 @@ class SymbolCache:
             )
 
     def get_candles(self, n: int = 10) -> list:
-        """Return the last N completed 1-minute candles."""
         return self._candles.get_candles(n)
 
     def get_candle_volumes(self, n: int = 20) -> list:
-        """NEW: Return last N completed candle volumes for seeding vol tracker."""
         return self._candles.get_candle_volumes(n)
 
     def get_elapsed_seconds(self) -> float:
-        """NEW: Seconds elapsed since current candle opened."""
         return self._candles.get_elapsed_seconds()
 
     def get_candle_minute(self):
-        """NEW: Current candle minute boundary datetime."""
         return self._candles.get_candle_minute()
 
+    def get_current_candle_volume(self) -> int:
+        """Return accumulated volume for the in-progress candle."""
+        return self._candles.get_current_candle_volume()
+
     def to_dict(self) -> dict:
-        """Return a snapshot of current state for the strategy to read."""
         with self._lock:
             stale = (
                 self.updated_at is None or
@@ -467,10 +443,6 @@ class PriceStream:
     # ── Public API ────────────────────────────────────────────
 
     def start(self):
-        """
-        Seed indicators from bars, then connect WebSocket in background.
-        Blocks up to 20s for the stream to come live.
-        """
         log.info(f"[STREAM] Starting for {self.symbols}")
         self._seed_all()
         self._running = True
@@ -502,7 +474,6 @@ class PriceStream:
         return data is None or data["stale"]
 
     def get_candles(self, symbol: str, n: int = 10) -> list:
-        """Return last N completed 1-minute candles for a symbol."""
         symbol = symbol.upper()
         cache  = self._cache.get(symbol)
         if cache is None:
@@ -510,10 +481,6 @@ class PriceStream:
         return cache.get_candles(n)
 
     def get_candle_volumes(self, symbol: str, n: int = 20) -> list:
-        """
-        NEW: Return last N completed candle volumes for a symbol.
-        Used to seed the strategy's volume acceleration tracker on startup.
-        """
         symbol = symbol.upper()
         cache  = self._cache.get(symbol)
         if cache is None:
@@ -521,10 +488,6 @@ class PriceStream:
         return cache.get_candle_volumes(n)
 
     def get_elapsed_seconds(self, symbol: str) -> float:
-        """
-        NEW: Return seconds elapsed since current candle started for a symbol.
-        Used by the strategy for intra-candle volume acceleration projection.
-        """
         symbol = symbol.upper()
         cache  = self._cache.get(symbol)
         if cache is None:
@@ -532,15 +495,26 @@ class PriceStream:
         return cache.get_elapsed_seconds()
 
     def get_candle_minute(self, symbol: str):
-        """
-        NEW: Return the current candle minute boundary datetime for a symbol.
-        Used to feed the strategy's volume acceleration tracker.
-        """
         symbol = symbol.upper()
         cache  = self._cache.get(symbol)
         if cache is None:
             return None
         return cache.get_candle_minute()
+
+    def get_current_candle_volume(self, symbol: str) -> int:
+        """
+        Return the accumulated volume for the current in-progress candle.
+
+        Used by main.py to feed the volume acceleration tracker with real
+        data. Previously main.py used cache["volume"] which is just the size
+        of the last single tick — massively undercounting candle volume.
+        This method reads the CandleBuilder's running total instead.
+        """
+        symbol = symbol.upper()
+        cache  = self._cache.get(symbol)
+        if cache is None:
+            return 0
+        return cache.get_current_candle_volume()
 
     # ── Bar seeding ───────────────────────────────────────────
 
