@@ -6,6 +6,10 @@ v2 changes:
     mtf_ok, momentum_score, roc_value, macd_histogram columns
   - init_db(): ALTER TABLE migration runs safely on existing DBs
   - log_signal(): accepts all new momentum signal fields
+
+v2.1 changes:
+  - open_trade(): added atr parameter (stored in DB for risk manager)
+  - init_db(): migration adds atr column to trades table
 """
 
 import os
@@ -91,7 +95,6 @@ def init_db():
         """)
 
         # ── Migration: add v2 columns to existing signals table ─
-        # Safe to run on both fresh and existing DBs
         migrations = [
             "ALTER TABLE signals ADD COLUMN IF NOT EXISTS roc_confirm    BOOLEAN",
             "ALTER TABLE signals ADD COLUMN IF NOT EXISTS macd_confirm   BOOLEAN",
@@ -100,6 +103,9 @@ def init_db():
             "ALTER TABLE signals ADD COLUMN IF NOT EXISTS momentum_score INTEGER",
             "ALTER TABLE signals ADD COLUMN IF NOT EXISTS roc_value      REAL",
             "ALTER TABLE signals ADD COLUMN IF NOT EXISTS macd_histogram REAL",
+            # v2.1: store entry ATR so risk manager uses correct value for
+            # breakeven/trail/TP calculations even if ATR changes mid-trade
+            "ALTER TABLE trades ADD COLUMN IF NOT EXISTS atr REAL",
         ]
         for sql in migrations:
             try:
@@ -173,17 +179,22 @@ def init_db():
 # ── Trade operations ──────────────────────────────────────────
 
 def open_trade(symbol, side, qty, entry_price, stop_loss,
-               take_profit, signal_score, signal_id=None):
+               take_profit, signal_score, signal_id=None, atr=None):
+    """
+    Insert a new open trade row. atr stores the entry-time ATR so the
+    risk manager can use the correct value for breakeven/trail/TP
+    calculations even after the live ATR changes mid-trade.
+    """
     trade_id = str(uuid.uuid4())[:8]
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("""
             INSERT INTO trades
               (id, symbol, side, qty, entry_price, stop_loss,
-               take_profit, signal_score, entered_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+               take_profit, signal_score, atr, entered_at)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, (trade_id, symbol, side, qty, entry_price,
-              stop_loss, take_profit, signal_score, datetime.utcnow()))
+              stop_loss, take_profit, signal_score, atr, datetime.utcnow()))
         if signal_id:
             cur.execute(
                 "UPDATE signals SET traded=TRUE, trade_id=%s WHERE id=%s",
