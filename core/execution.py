@@ -1,12 +1,15 @@
 """
 core/execution.py — Trade Execution via Alpaca Paper API
 
+v3.3 changes (EOD P&L fix):
+  - close_all_positions() now accepts optional current_prices dict so main.py
+    can pass live stream prices for EOD closes. Previously used entry_price as
+    the "current" price, causing all EOD trades to show $0.00 P&L.
+  - Falls back to entry_price if a symbol is missing from current_prices.
+
 v3.2 changes (orphan fix):
   - exit_trade() now retries on Alpaca 404 with a 10-second wait before
-    giving up and marking the trade as orphan_404. This handles the common
-    case where a market order fills but Alpaca hasn't registered the position
-    in /positions yet (especially common in the first few seconds after market
-    open or for fractional share orders).
+    giving up and marking the trade as orphan_404.
   - Two-attempt flow: first DELETE → if 404, wait 10s → second DELETE →
     only then mark orphan if still 404.
 
@@ -154,10 +157,6 @@ class ExecutionEngine:
             log.warning(f"[EXEC] Could not cancel existing orders for {symbol}: {cancel_err}")
 
         # ── Close position on Alpaca — with one retry on 404 ──────────────────
-        # A 404 at the first attempt usually means the market order was placed
-        # but hasn't settled into a position on Alpaca's side yet. This is
-        # common in the first few seconds after open, especially for fractional
-        # orders. Waiting 10 seconds and retrying handles this case.
         r = self._close_position_on_alpaca(symbol)
         if r is None:
             return None
@@ -234,14 +233,24 @@ class ExecutionEngine:
                     leveraged_pnl, reason, leverage)
         return leveraged_pnl
 
-    def close_all_positions(self, reason="eod"):
-        """Close all open positions — two-pass: DB trades first, then Alpaca orphan sweep."""
+    def close_all_positions(self, reason="eod", current_prices: dict = None):
+        """Close all open positions — two-pass: DB trades first, then Alpaca orphan sweep.
+
+        current_prices: optional dict of {symbol: float} with live prices fetched
+        from the stream. When provided, used for P&L calculation instead of entry_price
+        so EOD closes show accurate P&L. Falls back to entry_price if a symbol is
+        missing from the dict (e.g. if the stream had stale data for that symbol).
+        """
         open_trades = get_open_trades()
         if open_trades:
             for trade in open_trades:
                 symbol = trade["symbol"]
-                current_price = float(trade["entry_price"])
-                self.exit_trade(trade["id"], symbol, current_price, reason)
+                # Use live price if available, otherwise fall back to entry price
+                if current_prices and symbol in current_prices:
+                    price = current_prices[symbol]
+                else:
+                    price = float(trade["entry_price"])
+                self.exit_trade(trade["id"], symbol, price, reason)
             log.info(f"[EXEC] DB positions closed ({reason})")
         else:
             log.info(f"[EXEC] No open DB trades at EOD — checking Alpaca directly")
