@@ -1,6 +1,12 @@
 """
 core/execution.py — Trade Execution via Alpaca Paper API
 
+v3.4 changes (Bug 3 fix):
+  - SIMULATED_LEVERAGE now always read via get_config_override() at every
+    usage point. Previously all 4 usages read config.SIMULATED_LEVERAGE
+    directly, so the dashboard leverage slider saved to DB but the bot
+    ignored it completely.
+
 v3.3 changes (EOD P&L fix):
   - close_all_positions() now accepts optional current_prices dict so main.py
     can pass live stream prices for EOD closes. Previously used entry_price as
@@ -14,7 +20,6 @@ v3.2 changes (orphan fix):
     only then mark orphan if still 404.
 
 v3.1 changes:
-  - SIMULATED_LEVERAGE read live via get_config_override (dashboard slider works)
   - enter_trade passes signal.atr to open_trade so risk manager uses entry ATR
   - data_fetcher param removed from __init__ (was unused)
 """
@@ -36,7 +41,7 @@ ALPACA_TRADE_URL = "https://paper-api.alpaca.markets/v2"
 
 
 def _leverage() -> int:
-    """Read SIMULATED_LEVERAGE live so the dashboard slider takes effect."""
+    """Read SIMULATED_LEVERAGE live from DB so the dashboard slider works."""
     return int(get_config_override("SIMULATED_LEVERAGE", config.SIMULATED_LEVERAGE))
 
 
@@ -71,7 +76,7 @@ class ExecutionEngine:
             r.raise_for_status()
             data       = r.json()
             fill_price = float(data.get("filled_avg_price") or signal.price)
-            leverage   = _leverage()
+            leverage   = _leverage()  # read live from DB
             trade_id = open_trade(
                 symbol=signal.symbol,
                 side=signal.direction,
@@ -205,7 +210,7 @@ class ExecutionEngine:
         else:
             raw_pnl = (float(entry_price) - fill_price) * qty
 
-        leverage      = _leverage()
+        leverage      = _leverage()  # read live from DB
         leveraged_pnl = raw_pnl * leverage
         close_trade(trade_id, fill_price, reason)
 
@@ -234,18 +239,11 @@ class ExecutionEngine:
         return leveraged_pnl
 
     def close_all_positions(self, reason="eod", current_prices: dict = None):
-        """Close all open positions — two-pass: DB trades first, then Alpaca orphan sweep.
-
-        current_prices: optional dict of {symbol: float} with live prices fetched
-        from the stream. When provided, used for P&L calculation instead of entry_price
-        so EOD closes show accurate P&L. Falls back to entry_price if a symbol is
-        missing from the dict (e.g. if the stream had stale data for that symbol).
-        """
+        """Close all open positions — two-pass: DB trades first, then Alpaca orphan sweep."""
         open_trades = get_open_trades()
         if open_trades:
             for trade in open_trades:
                 symbol = trade["symbol"]
-                # Use live price if available, otherwise fall back to entry price
                 if current_prices and symbol in current_prices:
                     price = current_prices[symbol]
                 else:
