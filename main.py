@@ -10,7 +10,7 @@ import pytz
 
 from config import (
     SYMBOLS, STARTING_CAPITAL, SCAN_INTERVAL_SEC,
-    MARKET_OPEN, MARKET_CLOSE, META_REVIEW_HOUR
+    MARKET_OPEN, MARKET_CLOSE, META_REVIEW_HOUR, FLIP_COOLDOWN_SEC
 )
 from core.database      import init_db, get_open_trades, get_open_trade_for_symbol, upsert_daily_summary, get_config_override
 from core.data          import DataFetcher
@@ -51,7 +51,7 @@ class AlphaBot:
 
         self._last_slow         = {}
         self._last_exit         = {}
-        self._last_flip         = {}
+        self._last_flip         = {}   # symbol -> timestamp of last flip exit
         self._flip_direction    = {}
         self._flip_signal_count = {}
         self._fast_scan_until   = {}
@@ -121,13 +121,6 @@ class AlphaBot:
     def _is_morning_blackout(self) -> bool:
         """
         Morning open blackout — blocks the first N minutes of the session.
-
-        Purpose: the market open (9:30 AM) is chaotic. Spreads are wide,
-        price discovery is noisy, and SOXL/TQQQ can move several percent
-        in a minute. The bot also needs a few candles before MACD is reliable.
-        Blocking the first 10 minutes avoids the worst of the open volatility.
-
-        Controlled from the dashboard: MORNING_BLACKOUT_ENABLED + MORNING_BLACKOUT_MINS.
         """
         enabled = int(get_config_override("MORNING_BLACKOUT_ENABLED", 0))
         if not enabled:
@@ -158,21 +151,14 @@ class AlphaBot:
             self._flip_direction    = {}
             self._flip_signal_count = {}
             self._fast_scan_until   = {}
+            self._last_flip         = {}
 
     # ── Pre-market bar re-seed ────────────────────────────────
 
     def _reseed_bars(self):
-        """
-        Re-fetch 5-minute bar history for all symbols before the open.
-
-        Runs at 9:25 AM ET (13:25 UTC during EDT) every weekday.
-        Without this, a bot started after market close has zero bar history,
-        so MACD returns 0.0000 for the entire first hour (needs 37 candles).
-        After this re-seed, MACD works from the very first signal at 9:30 AM.
-        """
         now = datetime.now(ET)
         if now.weekday() >= 5:
-            return  # skip weekends
+            return
         log.info("[MAIN] 🌅 Pre-market bar re-seed starting...")
         try:
             self.stream._seed_all()
@@ -239,14 +225,29 @@ class AlphaBot:
 
         # ── Direction flip detection ──────────────────────────
         flip_enabled  = int(get_config_override("FLIP_ENABLED", getattr(config, "FLIP_ENABLED", 1)))
-        flip_min_base = int(get_config_override("FLIP_BASE_SCORE_MIN", getattr(config, "FLIP_BASE_SCORE_MIN", 3)))
+        flip_min_base = int(get_config_override("FLIP_BASE_SCORE_MIN", getattr(config, "FLIP_BASE_SCORE_MIN", 4)))
+        flip_cooldown = int(get_config_override("FLIP_COOLDOWN_SEC", getattr(config, "FLIP_COOLDOWN_SEC", 600)))
+
         if flip_enabled and self.risk.should_flip_exit(symbol, signal.direction):
+            last_flip_time = self._last_flip.get(symbol, 0)
+            time_since_flip = time.time() - last_flip_time
+
+            if time_since_flip < flip_cooldown:
+                # Cooldown active — suppress flip entirely
+                mins_left = int((flip_cooldown - time_since_flip) / 60)
+                log.debug(
+                    f"[MAIN] {symbol} flip suppressed — "
+                    f"cooldown {mins_left}m remaining"
+                )
+                return
+
             if signal.score < flip_min_base:
                 log.debug(
                     f"[MAIN] {symbol} flip suppressed — "
                     f"score={signal.score} < FLIP_BASE_SCORE_MIN={flip_min_base}"
                 )
                 return
+
             existing = get_open_trade_for_symbol(symbol)
             if existing:
                 log.info(
@@ -266,7 +267,7 @@ class AlphaBot:
         # ── Post-flip confirmation gate ───────────────────────
         last_flip = self._last_flip.get(symbol, 0)
         if last_flip > 0:
-            flip_min = int(get_config_override("FLIP_MIN_SIGNALS", getattr(config, "FLIP_MIN_SIGNALS", 1)))
+            flip_min = int(get_config_override("FLIP_MIN_SIGNALS", getattr(config, "FLIP_MIN_SIGNALS", 3)))
             flip_dir = self._flip_direction.get(symbol)
             if signal.direction == flip_dir:
                 count = self._flip_signal_count.get(symbol, 0) + 1
@@ -345,9 +346,6 @@ class AlphaBot:
                     open_trades = get_open_trades()
                     if open_trades:
                         log.info("[MAIN] 🔔 End of day — closing all positions")
-                        # Fetch live stream prices so EOD P&L is accurate.
-                        # Previously used entry_price as fallback, causing all
-                        # EOD closes to show $0.00 P&L. Now passes actual prices.
                         eod_prices = {}
                         for trade in open_trades:
                             sym   = trade["symbol"]
@@ -430,10 +428,7 @@ class AlphaBot:
     # ── Run ───────────────────────────────────────────────────
 
     def run(self):
-        # Daily meta brain review at 5 PM ET (21:00 UTC during EDT)
         schedule.every().day.at(f"{META_REVIEW_HOUR:02d}:00").do(self._daily_review)
-
-        # Pre-market bar re-seed at 9:25 AM ET (13:25 UTC during EDT).
         schedule.every().day.at("13:25").do(self._reseed_bars)
 
         while True:
