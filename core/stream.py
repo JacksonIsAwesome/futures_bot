@@ -6,29 +6,33 @@ price cache that the strategy reads from instead of polling bars.
 
 Architecture:
   - Startup: fetches 5-min bars to seed initial ATR, EMA, VWAP, RSI
-  - Live: WebSocket ticks update EMA, RSI, VWAP every tick
+  - Live: WebSocket ticks update EMA, VWAP every tick
   - Candle builder: accumulates ticks into 1-minute candles in real time.
-    When each 1-minute candle closes, ATR is recalculated from real
-    high/low/close data — giving live ATR that updates every minute
-    instead of being frozen at startup.
+    When each 1-minute candle closes, ATR and RSI are recalculated from
+    real high/low/close data — giving accurate indicators that update
+    every minute instead of being corrupted by tick noise.
 
-Why candles for ATR:
-  ATR requires a bar's high/low range — a single tick has no range.
-  We build our own 1-min candles from the tick stream so ATR updates
-  throughout the day using real intraday volatility, not stale morning data.
+Why candles for RSI (and ATR):
+  RSI requires consistent close-to-close deltas over N periods.
+  Individual ticks are not closes — they're random prints that can
+  swing RSI to 0 or 100 on consecutive ticks moving the same direction.
+  Calculating RSI on 1-min candle closes gives the real 14-period RSI
+  that matches what TradingView and every other platform shows.
 
 v2 additions:
-  - get_candle_volumes(symbol): returns completed candle volumes for seeding
-    the volume acceleration tracker in the strategy
-  - get_elapsed_seconds(symbol): returns seconds elapsed since current
-    candle opened, used for intra-candle volume acceleration projection
-  - get_candle_minute(symbol): returns the current candle's minute boundary
-    as a datetime, used by the strategy's on_tick feed
+  - get_candle_volumes(symbol): returns completed candle volumes
+  - get_elapsed_seconds(symbol): seconds elapsed since current candle opened
+  - get_candle_minute(symbol): current candle's minute boundary
 
 v2.1 additions:
-  - get_current_candle_volume(symbol): returns the ACCUMULATED volume for
-    the in-progress candle (not just the last tick's size). Used by main.py
-    to feed the volume tracker with accurate data.
+  - get_current_candle_volume(symbol): accumulated volume for in-progress candle
+
+v3 fix (RSI):
+  - RSI now calculated on 1-minute candle closes only, not on every tick
+  - Eliminates RSI swinging 5-100 within seconds due to tick noise
+  - on_tick() no longer updates RSI; candle close event updates it instead
+  - _closes deque still maintained for EMA (tick-level EMA is acceptable
+    since EMA smooths naturally; RSI does not)
 """
 
 import json
@@ -52,14 +56,15 @@ BARS_URL        = "https://data.alpaca.markets/v2/stocks/{symbol}/bars"
 STALE_SECONDS   = 120
 RECONNECT_DELAY = 10
 BAR_LIMIT       = 100
-BAR_TIMEFRAME   = "5Min"   # seed ATR from 5-min bars for realistic volatility
-CANDLE_MINUTES  = 1        # build candles every N minutes from ticks
-ATR_PERIOD      = 14       # number of candles to use for ATR
+BAR_TIMEFRAME   = "5Min"
+CANDLE_MINUTES  = 1
+ATR_PERIOD      = 14
+RSI_PERIOD      = 14   # number of 1-min candle closes needed for RSI
+
 
 # ── Indicator math ────────────────────────────────────────────────────────────
 
 def _ema(prices: list, period: int) -> float:
-    """Exponential moving average."""
     if not prices:
         return 0.0
     if len(prices) < period:
@@ -72,10 +77,6 @@ def _ema(prices: list, period: int) -> float:
 
 
 def _atr(highs: list, lows: list, closes: list, period: int = 14) -> float:
-    """
-    True Average True Range from OHLC candle data.
-    Requires at least 2 candles. Falls back to HL range if fewer.
-    """
     if not highs or not lows or not closes:
         return 1.0
     if len(closes) < 2:
@@ -93,8 +94,16 @@ def _atr(highs: list, lows: list, closes: list, period: int = 14) -> float:
     return result if result > 0 else 1.0
 
 
-def _rsi(closes: list, period: int = 14) -> float:
-    """RSI from close prices."""
+def _rsi_from_closes(closes: list, period: int = 14) -> float:
+    """
+    Calculate RSI from a list of candle close prices.
+
+    Requires at least period+1 values to compute one delta.
+    Returns 50.0 (neutral) if not enough data.
+
+    This should ONLY be called with candle closes (1-min or 5-min),
+    never with individual tick prices — tick-level RSI is meaningless.
+    """
     if len(closes) < period + 1:
         return 50.0
     gains, losses = [], []
@@ -111,7 +120,6 @@ def _rsi(closes: list, period: int = 14) -> float:
 
 
 def _vwap(prices: list, volumes: list) -> float:
-    """Volume weighted average price."""
     if not prices or not volumes:
         return prices[-1] if prices else 0.0
     total_vol = sum(volumes)
@@ -125,20 +133,20 @@ def _vwap(prices: list, volumes: list) -> float:
 class CandleBuilder:
     """
     Accumulates tick data into 1-minute OHLC candles.
+
     When a candle closes (minute boundary crossed), it's added to the
-    candle history and ATR is recalculated from real high/low data.
+    candle history. ATR and RSI are recalculated from real OHLC data
+    on each candle close — not on every tick.
 
-    v2: also tracks per-candle volume for the volume acceleration tracker,
-    and exposes elapsed_seconds so the strategy can project intra-candle volume.
-
-    v2.1: exposes get_current_candle_volume() so main.py can feed the
-    volume tracker with the real accumulated volume rather than a single tick.
+    v3: exposes get_rsi() so SymbolCache can read candle-based RSI
+    instead of computing it from noisy tick prices.
     """
 
-    def __init__(self, atr_period: int = ATR_PERIOD):
+    def __init__(self, atr_period: int = ATR_PERIOD, rsi_period: int = RSI_PERIOD):
         self.atr_period = atr_period
+        self.rsi_period = rsi_period
 
-        _candle_maxlen = max(atr_period + 5, 60)
+        _candle_maxlen = max(atr_period + rsi_period + 10, 80)
         self._candle_highs   = deque(maxlen=_candle_maxlen)
         self._candle_lows    = deque(maxlen=_candle_maxlen)
         self._candle_closes  = deque(maxlen=_candle_maxlen)
@@ -152,6 +160,10 @@ class CandleBuilder:
         self._candle_minute  = None
         self._candle_start   = None
 
+        # Cached indicator values — updated on candle close only
+        self._atr = 1.0
+        self._rsi = 50.0
+
         self._lock = threading.Lock()
 
     def seed_from_bars(self, highs: list, lows: list, closes: list,
@@ -162,6 +174,14 @@ class CandleBuilder:
             self._candle_closes.extend(closes)
             if volumes:
                 self._candle_volumes.extend(volumes)
+            # Compute initial RSI and ATR from seeded bar data
+            self._atr = _atr(
+                list(self._candle_highs),
+                list(self._candle_lows),
+                list(self._candle_closes),
+                self.atr_period
+            )
+            self._rsi = _rsi_from_closes(list(self._candle_closes), self.rsi_period)
 
     def on_tick(self, price: float, volume: int, ts: datetime) -> bool:
         minute = ts.replace(second=0, microsecond=0)
@@ -178,11 +198,20 @@ class CandleBuilder:
                 self._candle_volume = volume
 
             elif minute > self._candle_minute:
+                # Candle closed — save it and update indicators
                 self._candle_highs.append(self._candle_high)
                 self._candle_lows.append(self._candle_low)
                 self._candle_closes.append(self._candle_close)
                 self._candle_volumes.append(self._candle_volume)
 
+                # Update ATR and RSI from candle closes — NOT tick prices
+                h = list(self._candle_highs)
+                l = list(self._candle_lows)
+                c = list(self._candle_closes)
+                self._atr = _atr(h, l, c, self.atr_period)
+                self._rsi = _rsi_from_closes(c, self.rsi_period)
+
+                # Start new candle
                 self._candle_minute = minute
                 self._candle_start  = datetime.utcnow()
                 self._candle_open   = price
@@ -205,12 +234,16 @@ class CandleBuilder:
 
     def get_atr(self) -> float:
         with self._lock:
-            h = list(self._candle_highs)
-            l = list(self._candle_lows)
-            c = list(self._candle_closes)
-        if len(c) < 2:
-            return 1.0
-        return _atr(h, l, c, self.atr_period)
+            return self._atr
+
+    def get_rsi(self) -> float:
+        """
+        Returns RSI calculated from 1-minute candle closes.
+        This is the real RSI — stable, meaningful, matches charting platforms.
+        Never call _rsi_from_closes() on tick prices.
+        """
+        with self._lock:
+            return self._rsi
 
     def get_candles(self, n: int = 10) -> list:
         with self._lock:
@@ -251,13 +284,6 @@ class CandleBuilder:
             return self._candle_minute
 
     def get_current_candle_volume(self) -> int:
-        """
-        Return accumulated volume for the in-progress (not yet closed) candle.
-        Unlike get_candle_volumes() which returns completed candles, this gives
-        the running total for the candle currently being built from live ticks.
-        Used by main.py to feed the volume tracker with accurate data instead
-        of just the last single tick's size.
-        """
         with self._lock:
             return self._candle_volume
 
@@ -272,9 +298,12 @@ class SymbolCache:
     """
     Holds all indicator state for one symbol.
 
-    EMA, RSI, VWAP: updated every tick (fast, no high/low needed)
-    ATR: updated every minute when a new candle closes (needs real OHLC)
-    High/Low: tracked from ticks for price action signal
+    EMA, VWAP: updated every tick (naturally smoothed, tick noise is fine)
+    ATR, RSI:  updated every minute on candle close (require real OHLC)
+    High/Low:  tracked from ticks for price action signal
+
+    v3: RSI is now read from CandleBuilder.get_rsi() instead of being
+    calculated from tick prices. This fixes RSI swinging 5-100 in seconds.
     """
 
     def __init__(self, symbol: str):
@@ -286,18 +315,18 @@ class SymbolCache:
         self.ema9       = None
         self.ema21      = None
         self.atr        = None
-        self.rsi        = None
+        self.rsi        = 50.0   # default neutral until first candle closes
         self.vwap       = None
         self.high       = None
         self.low        = None
         self.prev_high  = None
         self.prev_low   = None
 
-        self._closes        = deque(maxlen=200)
+        self._closes        = deque(maxlen=200)   # tick closes for EMA only
         self._intra_prices  = deque(maxlen=5000)
         self._intra_volumes = deque(maxlen=5000)
 
-        self._candles = CandleBuilder(atr_period=ATR_PERIOD)
+        self._candles = CandleBuilder(atr_period=ATR_PERIOD, rsi_period=RSI_PERIOD)
 
         self._lock = threading.Lock()
 
@@ -315,7 +344,6 @@ class SymbolCache:
             self._closes.extend(closes)
             self.ema9  = _ema(closes, 9)
             self.ema21 = _ema(closes, 21)
-            self.rsi   = _rsi(closes)
             self.vwap  = _vwap(closes, vols)
             self.price = closes[-1]
 
@@ -333,8 +361,10 @@ class SymbolCache:
 
             self.updated_at = datetime.utcnow()
 
+        # Seed candle builder — this also computes initial ATR and RSI
         self._candles.seed_from_bars(highs, lows, closes, vols)
         self.atr = self._candles.get_atr()
+        self.rsi = self._candles.get_rsi()
 
         log.info(
             f"[STREAM] {self.symbol} seeded | "
@@ -355,12 +385,14 @@ class SymbolCache:
 
             closes = list(self._closes)
 
+            # EMA updates on every tick — smoothing makes this acceptable
             if len(closes) >= 9:
                 self.ema9 = _ema(closes, 9)
             if len(closes) >= 21:
                 self.ema21 = _ema(closes, 21)
-            if len(closes) >= 15:
-                self.rsi = _rsi(closes)
+
+            # NOTE: RSI is NOT updated here anymore (v3 fix)
+            # RSI is updated only when a candle closes in the block below
 
             ip = list(self._intra_prices)
             iv = list(self._intra_volumes)
@@ -372,15 +404,19 @@ class SymbolCache:
             if self.low is None or price < self.low:
                 self.low = price
 
+        # Feed candle builder — returns True when a new candle closes
         candle_closed = self._candles.on_tick(price, volume, ts)
 
         if candle_closed:
+            # Update ATR and RSI from candle closes — real values
             new_atr = self._candles.get_atr()
+            new_rsi = self._candles.get_rsi()
             with self._lock:
                 self.atr = new_atr
+                self.rsi = new_rsi
             log.debug(
                 f"[STREAM] {self.symbol} candle closed — "
-                f"ATR updated to {new_atr:.4f} "
+                f"ATR={new_atr:.4f} RSI={new_rsi:.1f} "
                 f"({self._candles.candle_count()} candles)"
             )
 
@@ -397,7 +433,6 @@ class SymbolCache:
         return self._candles.get_candle_minute()
 
     def get_current_candle_volume(self) -> int:
-        """Return accumulated volume for the in-progress candle."""
         return self._candles.get_current_candle_volume()
 
     def to_dict(self) -> dict:
@@ -502,14 +537,6 @@ class PriceStream:
         return cache.get_candle_minute()
 
     def get_current_candle_volume(self, symbol: str) -> int:
-        """
-        Return the accumulated volume for the current in-progress candle.
-
-        Used by main.py to feed the volume acceleration tracker with real
-        data. Previously main.py used cache["volume"] which is just the size
-        of the last single tick — massively undercounting candle volume.
-        This method reads the CandleBuilder's running total instead.
-        """
         symbol = symbol.upper()
         cache  = self._cache.get(symbol)
         if cache is None:
