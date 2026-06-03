@@ -73,8 +73,9 @@ FAST_SCAN_INTERVAL          = 20
 
 # ── Direction flip ────────────────────────────────────────────
 FLIP_ENABLED                = 1
-FLIP_MIN_SIGNALS            = 1   # signals needed in new direction before re-entering
-FLIP_BASE_SCORE_MIN         = 3   # min base score needed to trigger a flip
+FLIP_MIN_SIGNALS            = 3    # was 1 — now requires 3 confirming signals before re-entry
+FLIP_BASE_SCORE_MIN         = 4    # was 3 — higher bar to trigger a flip
+FLIP_COOLDOWN_SEC           = 600  # NEW — 10 min minimum between flips per symbol
 
 # ── Risk / stops ─────────────────────────────────────────────
 ATR_PERIOD           = 14
