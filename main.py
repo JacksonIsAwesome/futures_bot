@@ -345,7 +345,25 @@ class AlphaBot:
                     open_trades = get_open_trades()
                     if open_trades:
                         log.info("[MAIN] 🔔 End of day — closing all positions")
-                        self.execution.close_all_positions(reason="eod")
+                        # Fetch live stream prices so EOD P&L is accurate.
+                        # Previously used entry_price as fallback, causing all
+                        # EOD closes to show $0.00 P&L. Now passes actual prices.
+                        eod_prices = {}
+                        for trade in open_trades:
+                            sym   = trade["symbol"]
+                            cache = self.stream.get_price(sym)
+                            if cache and not cache.get("stale") and cache.get("price"):
+                                eod_prices[sym] = cache["price"]
+                                log.info(f"[MAIN] EOD price {sym}: ${cache['price']:.2f}")
+                            else:
+                                log.warning(
+                                    f"[MAIN] EOD price {sym}: stale/unavailable, "
+                                    f"falling back to entry price"
+                                )
+                        self.execution.close_all_positions(
+                            reason="eod",
+                            current_prices=eod_prices
+                        )
                     upsert_daily_summary()
                 else:
                     log.info("[MAIN] 🔔 End of day — CLOSE_EOD off, holding overnight")
@@ -416,10 +434,6 @@ class AlphaBot:
         schedule.every().day.at(f"{META_REVIEW_HOUR:02d}:00").do(self._daily_review)
 
         # Pre-market bar re-seed at 9:25 AM ET (13:25 UTC during EDT).
-        # This ensures MACD has real bar data before the opening bell.
-        # Note: 13:25 UTC = 9:25 AM EDT (summer). In winter (EST), this
-        # fires at 8:25 AM ET — still fine, bars will just be yesterday's
-        # close data which is better than nothing. Fix properly with bug #6.
         schedule.every().day.at("13:25").do(self._reseed_bars)
 
         while True:
