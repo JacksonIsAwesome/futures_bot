@@ -12,6 +12,11 @@ moves the bot missed, bad stop placement, etc.
 Uses Claude API for the daily report — feeds it the raw stats AND
 full bar data. Math still handles threshold adjustments so they're
 deterministic. Claude explains what's happening and gives suggestions.
+
+v2 fix: _adjust_thresholds now reads live DB values via get_config_override()
+instead of hardcoded config.X defaults. Previously the meta brain was making
+the same adjustment every single day (e.g. MIN_SIGNAL_SCORE: 3→4 forever)
+because it always read from config.py (always 3) instead of the DB (already 4).
 """
 
 import os
@@ -26,7 +31,7 @@ from core.notifier import notify_eod_summary
 import config
 
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
-GITHUB_REPO  = os.environ.get("GITHUB_REPO",  "JacksonIsAwesome/futures_bot")
+GITHUB_REPO  = os.environ.get("GITHUB_REPO", "JacksonIsAwesome/futures_bot")
 GITHUB_API   = "https://api.github.com"
 
 ANTHROPIC_API_KEY = config.ANTHROPIC_API_KEY
@@ -46,12 +51,12 @@ class MetaBrain:
         log.info("[META] ═══════════════════════════════════════════")
         log.info("[META] Starting daily review...")
 
-        stats    = self._gather_stats()
-        missed   = self._find_missed_opportunities()
-        issues   = self._identify_issues(stats)
-        adjusts  = self._adjust_thresholds(stats, missed)
-        bars     = self._fetch_daily_bars()
-        report   = self._write_report(stats, missed, issues, adjusts, bars)
+        stats   = self._gather_stats()
+        missed  = self._find_missed_opportunities()
+        issues  = self._identify_issues(stats)
+        adjusts = self._adjust_thresholds(stats, missed)
+        bars    = self._fetch_daily_bars()
+        report  = self._write_report(stats, missed, issues, adjusts, bars)
 
         self._save_review(stats, missed, issues, adjusts, report)
 
@@ -75,7 +80,7 @@ class MetaBrain:
         log.info("[META] ═══════════════════════════════════════════")
         return report
 
-    # ── Daily bar fetching ────────────────────────────────────
+    # ── Daily bar fetching ────────────────────────────────────────
 
     def _fetch_daily_bars(self) -> dict:
         """
@@ -84,7 +89,7 @@ class MetaBrain:
         Falls back to empty dict if API fails.
         """
         result = {}
-        today = date.today()
+        today  = date.today()
 
         # market open/close in UTC (ET + 4h)
         start = datetime.combine(today, datetime.min.time()).replace(hour=13, minute=30)
@@ -110,15 +115,13 @@ class MetaBrain:
                 resp.raise_for_status()
                 raw_bars = resp.json().get("bars") or []
 
-                # simplify bars for the prompt — keep it readable
                 simplified = []
                 for b in raw_bars:
-                    # convert UTC timestamp to ET for readability
                     t = b.get("t", "")
                     try:
-                        dt = datetime.fromisoformat(t.replace("Z", "+00:00"))
-                        et_hour   = (dt.hour - 4) % 24   # rough UTC->ET
-                        time_str  = f"{et_hour:02d}:{dt.minute:02d}"
+                        dt      = datetime.fromisoformat(t.replace("Z", "+00:00"))
+                        et_hour = (dt.hour - 4) % 24
+                        time_str = f"{et_hour:02d}:{dt.minute:02d}"
                     except Exception:
                         time_str = t
 
@@ -140,7 +143,7 @@ class MetaBrain:
 
         return result
 
-    # ── Data gathering ────────────────────────────────────────
+    # ── Data gathering ────────────────────────────────────────────
 
     def _gather_stats(self) -> dict:
         """Pull last 7 days of trade performance."""
@@ -151,13 +154,13 @@ class MetaBrain:
 
             cur.execute("""
                 SELECT
-                    COUNT(*) FILTER (WHERE status != 'open')          as total,
-                    COUNT(*) FILTER (WHERE pnl_usd > 0)               as wins,
+                    COUNT(*) FILTER (WHERE status != 'open') as total,
+                    COUNT(*) FILTER (WHERE pnl_usd > 0)      as wins,
                     COUNT(*) FILTER (WHERE pnl_usd <= 0 AND status != 'open') as losses,
-                    COALESCE(AVG(pnl_usd) FILTER (WHERE pnl_usd > 0), 0)  as avg_win,
+                    COALESCE(AVG(pnl_usd) FILTER (WHERE pnl_usd > 0), 0)                     as avg_win,
                     COALESCE(AVG(pnl_usd) FILTER (WHERE pnl_usd <= 0 AND status != 'open'), 0) as avg_loss,
                     COALESCE(SUM(pnl_usd) FILTER (WHERE status != 'open'), 0) as total_pnl,
-                    COALESCE(AVG(signal_score), 0)                    as avg_score
+                    COALESCE(AVG(signal_score), 0) as avg_score
                 FROM trades
                 WHERE entered_at >= %s
             """, (cutoff,))
@@ -174,9 +177,9 @@ class MetaBrain:
             cur.execute("""
                 SELECT
                     EXTRACT(HOUR FROM entered_at AT TIME ZONE 'America/New_York') as hour,
-                    COUNT(*) FILTER (WHERE pnl_usd > 0)  as wins,
-                    COUNT(*) FILTER (WHERE pnl_usd <= 0 AND status != 'open') as losses,
-                    COALESCE(SUM(pnl_usd), 0) as pnl
+                    COUNT(*) FILTER (WHERE pnl_usd > 0)                           as wins,
+                    COUNT(*) FILTER (WHERE pnl_usd <= 0 AND status != 'open')     as losses,
+                    COALESCE(SUM(pnl_usd), 0)                                     as pnl
                 FROM trades
                 WHERE entered_at >= %s AND status != 'open'
                 GROUP BY hour
@@ -187,9 +190,9 @@ class MetaBrain:
             cur.execute("""
                 SELECT
                     symbol,
-                    COUNT(*) FILTER (WHERE pnl_usd > 0) as wins,
+                    COUNT(*) FILTER (WHERE pnl_usd > 0)                       as wins,
                     COUNT(*) FILTER (WHERE pnl_usd <= 0 AND status != 'open') as losses,
-                    COALESCE(SUM(pnl_usd), 0) as pnl
+                    COALESCE(SUM(pnl_usd), 0)                                 as pnl
                 FROM trades
                 WHERE entered_at >= %s AND status != 'open'
                 GROUP BY symbol
@@ -206,8 +209,6 @@ class MetaBrain:
             """, (cutoff,))
             row["by_exit"] = [dict(r) for r in cur.fetchall()]
 
-            # also pull today's actual trades with entry/exit prices and times
-            # so Claude can overlay them on the bar data
             today_cutoff = datetime.utcnow().replace(hour=0, minute=0, second=0)
             cur.execute("""
                 SELECT
@@ -237,7 +238,7 @@ class MetaBrain:
                   AND direction IS NOT NULL
                 ORDER BY score DESC
             """, (cutoff,))
-            untraded = cur.fetchall()
+            untraded     = cur.fetchall()
             missed_total = len(untraded)
 
             cur.execute("""
@@ -258,15 +259,15 @@ class MetaBrain:
 
         return {
             "total_untraded": missed_total,
-            "missed_wins": missed_wins,
-            "near_misses": near_misses,
-            "miss_rate": (missed_wins / missed_total * 100) if missed_total > 0 else 0
+            "missed_wins":    missed_wins,
+            "near_misses":    near_misses,
+            "miss_rate":      (missed_wins / missed_total * 100) if missed_total > 0 else 0
         }
 
     def _identify_issues(self, stats: dict) -> str:
         win_rate = stats.get("win_rate", 0)
-        avg_rr   = stats.get("avg_rr", 0)
-        total    = stats.get("total", 0)
+        avg_rr   = stats.get("avg_rr",   0)
+        total    = stats.get("total",     0)
 
         if total < config.META_MIN_TRADES:
             return f"Not enough trades yet ({total}/{config.META_MIN_TRADES} needed for analysis)"
@@ -306,6 +307,15 @@ class MetaBrain:
         return "No standout winners yet — need more data"
 
     def _adjust_thresholds(self, stats: dict, missed: dict) -> dict:
+        """
+        Adjust config overrides based on 7-day performance.
+
+        IMPORTANT: reads live DB values via get_config_override() so each
+        adjustment builds on the previous one. The old version read from
+        config.X (Python file defaults) which caused the same adjustment
+        to repeat every day (e.g. MIN_SIGNAL_SCORE: 3→4 forever because
+        config.MIN_SIGNAL_SCORE is always 3, ignoring the DB value of 4).
+        """
         adjustments = {}
         total = stats.get("total", 0)
 
@@ -315,39 +325,47 @@ class MetaBrain:
 
         step     = config.META_ADJUST_STEP
         win_rate = stats.get("win_rate", 0)
-        avg_rr   = stats.get("avg_rr", 0)
-        missed_w = missed.get("missed_wins", 0)
-        near_m   = missed.get("near_misses", 0)
+        avg_rr   = stats.get("avg_rr",   0)
+        missed_w = missed.get("missed_wins",  0)
+        near_m   = missed.get("near_misses",  0)
 
+        # ── MIN_SIGNAL_SCORE ──────────────────────────────────────────────────
+        # Read from DB so increments accumulate (3→4→5) not loop (3→4→3→4).
         if win_rate < 45:
-            current = config.MIN_SIGNAL_SCORE
+            current = int(get_config_override("MIN_SIGNAL_SCORE", config.MIN_SIGNAL_SCORE))
             new_val = min(current + 1, 5)
             if new_val != current:
                 set_config_override("MIN_SIGNAL_SCORE", new_val)
                 adjustments["MIN_SIGNAL_SCORE"] = f"{current} → {new_val} (win rate too low)"
+            else:
+                log.info(f"[META] MIN_SIGNAL_SCORE already at max ({current}) — no change")
 
         elif win_rate > 65 and missed_w > 5:
-            current = config.MIN_SIGNAL_SCORE
+            current = int(get_config_override("MIN_SIGNAL_SCORE", config.MIN_SIGNAL_SCORE))
             new_val = max(current - 1, 2)
             if new_val != current:
                 set_config_override("MIN_SIGNAL_SCORE", new_val)
                 adjustments["MIN_SIGNAL_SCORE"] = f"{current} → {new_val} (missing too many wins)"
 
+        # ── ATR_TP_MULT ───────────────────────────────────────────────────────
+        # Read from DB so 4.0→4.1→4.2 accumulates instead of looping at 4.1.
         if avg_rr < 1.5 and total >= config.META_MIN_TRADES:
-            current = config.ATR_TP_MULT
+            current = float(get_config_override("ATR_TP_MULT", config.ATR_TP_MULT))
             new_val = round(current + step, 2)
             set_config_override("ATR_TP_MULT", new_val)
             adjustments["ATR_TP_MULT"] = f"{current} → {new_val} (R:R too low)"
 
         elif avg_rr > 3.0:
-            current = config.ATR_STOP_MULT
+            current = float(get_config_override("ATR_STOP_MULT", config.ATR_STOP_MULT))
             new_val = round(current - step, 2)
             if new_val >= 0.5:
                 set_config_override("ATR_STOP_MULT", new_val)
                 adjustments["ATR_STOP_MULT"] = f"{current} → {new_val} (R:R excellent, tightening stops)"
 
+        # ── VOLUME_SPIKE_MULT ─────────────────────────────────────────────────
+        # Read from DB so 1.5→1.4→1.3 accumulates instead of looping at 1.4.
         if near_m > 10:
-            current = config.VOLUME_SPIKE_MULT
+            current = float(get_config_override("VOLUME_SPIKE_MULT", config.VOLUME_SPIKE_MULT))
             new_val = round(current - step, 2)
             if new_val >= 1.0:
                 set_config_override("VOLUME_SPIKE_MULT", new_val)
@@ -362,7 +380,6 @@ class MetaBrain:
         """
         top_win = self._identify_top_win(stats)
 
-        # format today's trades for the prompt
         todays_trades = []
         for t in stats.get("todays_trades", []):
             todays_trades.append({
@@ -370,49 +387,46 @@ class MetaBrain:
                 "side":        t["side"],
                 "score":       t["signal_score"],
                 "entry_price": round(float(t["entry_price"] or 0), 2),
-                "exit_price":  round(float(t["exit_price"] or 0), 2),
-                "pnl":         round(float(t["pnl_usd"] or 0), 2),
-                "stop_loss":   round(float(t["stop_loss"] or 0), 2),
+                "exit_price":  round(float(t["exit_price"]  or 0), 2),
+                "pnl":         round(float(t["pnl_usd"]     or 0), 2),
+                "stop_loss":   round(float(t["stop_loss"]   or 0), 2),
                 "take_profit": round(float(t["take_profit"] or 0), 2),
                 "exit_reason": t["exit_reason"],
                 "entry_time":  str(t["entry_et"])[:16] if t["entry_et"] else None,
-                "exit_time":   str(t["exit_et"])[:16] if t["exit_et"] else None,
+                "exit_time":   str(t["exit_et"])[:16]  if t["exit_et"]  else None,
             })
 
-        # build bar summary — include full bars but note token limit
-        # 390 bars * ~50 chars each = ~20k chars, well within Claude's window
         bar_data = {}
         for symbol, symbol_bars in bars.items():
             if symbol_bars:
                 bar_data[symbol] = symbol_bars
-                # also add quick summary stats
-                closes = [b["c"] for b in symbol_bars]
+                closes  = [b["c"] for b in symbol_bars]
                 volumes = [b["v"] for b in symbol_bars]
                 bar_data[f"{symbol}_summary"] = {
-                    "open":       symbol_bars[0]["o"] if symbol_bars else None,
-                    "close":      symbol_bars[-1]["c"] if symbol_bars else None,
-                    "day_high":   max(b["h"] for b in symbol_bars) if symbol_bars else None,
-                    "day_low":    min(b["l"] for b in symbol_bars) if symbol_bars else None,
-                    "total_bars": len(symbol_bars),
-                    "avg_volume": round(sum(volumes) / len(volumes)) if volumes else 0,
+                    "open":           symbol_bars[0]["o"] if symbol_bars else None,
+                    "close":          symbol_bars[-1]["c"] if symbol_bars else None,
+                    "day_high":       max(b["h"] for b in symbol_bars) if symbol_bars else None,
+                    "day_low":        min(b["l"] for b in symbol_bars) if symbol_bars else None,
+                    "total_bars":     len(symbol_bars),
+                    "avg_volume":     round(sum(volumes) / len(volumes)) if volumes else 0,
                     "max_volume_bar": max(symbol_bars, key=lambda b: b["v"]) if symbol_bars else None,
                 }
 
         data_summary = {
-            "date": str(date.today()),
+            "date":          str(date.today()),
             "lookback_days": config.META_LOOKBACK_DAYS,
             "performance_7d": {
-                "total_trades":    stats.get("total", 0),
+                "total_trades":    stats.get("total",     0),
                 "win_rate_pct":    round(stats.get("win_rate", 0), 1),
-                "avg_rr":          round(stats.get("avg_rr", 0), 2),
+                "avg_rr":          round(stats.get("avg_rr",   0), 2),
                 "total_pnl_usd":   round(stats.get("total_pnl", 0), 2),
-                "avg_signal_score": round(stats.get("avg_score", 0), 1),
+                "avg_signal_score":round(stats.get("avg_score",  0), 1),
             },
             "todays_trades": todays_trades,
             "missed_opportunities": {
                 "untraded_signals": missed.get("total_untraded", 0),
-                "would_have_won":   missed.get("missed_wins", 0),
-                "near_misses":      missed.get("near_misses", 0),
+                "would_have_won":   missed.get("missed_wins",    0),
+                "near_misses":      missed.get("near_misses",    0),
             },
             "by_hour": [
                 {
@@ -438,53 +452,53 @@ class MetaBrain:
             "top_win":   top_win,
             "current_config": {
                 # ── Entry gates ───────────────────────────────
-                "MIN_SIGNAL_SCORE":           get_config_override("MIN_SIGNAL_SCORE",           config.MIN_SIGNAL_SCORE),
-                "PRIME_BASE_MIN":             get_config_override("PRIME_BASE_MIN",             config.PRIME_BASE_MIN),
-                "REGULAR_BASE_MIN":           get_config_override("REGULAR_BASE_MIN",           config.REGULAR_BASE_MIN),
-                "PRIME_END_HOUR":             get_config_override("PRIME_END_HOUR",             config.PRIME_END_HOUR),
+                "MIN_SIGNAL_SCORE":            get_config_override("MIN_SIGNAL_SCORE",            config.MIN_SIGNAL_SCORE),
+                "PRIME_BASE_MIN":              get_config_override("PRIME_BASE_MIN",              config.PRIME_BASE_MIN),
+                "REGULAR_BASE_MIN":            get_config_override("REGULAR_BASE_MIN",            config.REGULAR_BASE_MIN),
+                "PRIME_END_HOUR":              get_config_override("PRIME_END_HOUR",              config.PRIME_END_HOUR),
                 # ── Momentum gate ─────────────────────────────
-                "MOMENTUM_GATE_ENABLED":      get_config_override("MOMENTUM_GATE_ENABLED",      config.MOMENTUM_GATE_ENABLED),
-                "MOMENTUM_GATE_MIN":          get_config_override("MOMENTUM_GATE_MIN",          config.MOMENTUM_GATE_MIN),
-                "ROC_PERIOD":                 get_config_override("ROC_PERIOD",                 config.ROC_PERIOD),
-                "ROC_MIN_LONG":               get_config_override("ROC_MIN_LONG",               config.ROC_MIN_LONG),
-                "ROC_MIN_SHORT":              get_config_override("ROC_MIN_SHORT",              config.ROC_MIN_SHORT),
-                "MACD_FAST":                  get_config_override("MACD_FAST",                  config.MACD_FAST),
-                "MACD_SLOW":                  get_config_override("MACD_SLOW",                  config.MACD_SLOW),
-                "MACD_SIGNAL_PERIOD":         get_config_override("MACD_SIGNAL_PERIOD",         config.MACD_SIGNAL_PERIOD),
-                "CANDLE_CONSISTENCY_LOOKBACK":get_config_override("CANDLE_CONSISTENCY_LOOKBACK",config.CANDLE_CONSISTENCY_LOOKBACK),
-                "CANDLE_CONSISTENCY_MIN":     get_config_override("CANDLE_CONSISTENCY_MIN",     config.CANDLE_CONSISTENCY_MIN),
+                "MOMENTUM_GATE_ENABLED":       get_config_override("MOMENTUM_GATE_ENABLED",       config.MOMENTUM_GATE_ENABLED),
+                "MOMENTUM_GATE_MIN":           get_config_override("MOMENTUM_GATE_MIN",           config.MOMENTUM_GATE_MIN),
+                "ROC_PERIOD":                  get_config_override("ROC_PERIOD",                  config.ROC_PERIOD),
+                "ROC_MIN_LONG":                get_config_override("ROC_MIN_LONG",                config.ROC_MIN_LONG),
+                "ROC_MIN_SHORT":               get_config_override("ROC_MIN_SHORT",               config.ROC_MIN_SHORT),
+                "MACD_FAST":                   get_config_override("MACD_FAST",                   config.MACD_FAST),
+                "MACD_SLOW":                   get_config_override("MACD_SLOW",                   config.MACD_SLOW),
+                "MACD_SIGNAL_PERIOD":          get_config_override("MACD_SIGNAL_PERIOD",          config.MACD_SIGNAL_PERIOD),
+                "CANDLE_CONSISTENCY_LOOKBACK": get_config_override("CANDLE_CONSISTENCY_LOOKBACK", config.CANDLE_CONSISTENCY_LOOKBACK),
+                "CANDLE_CONSISTENCY_MIN":      get_config_override("CANDLE_CONSISTENCY_MIN",      config.CANDLE_CONSISTENCY_MIN),
                 # ── MTF / VWAP / Volume ───────────────────────
-                "MTF_FILTER_ENABLED":         get_config_override("MTF_FILTER_ENABLED",         config.MTF_FILTER_ENABLED),
-                "MTF_EMA_PERIOD":             get_config_override("MTF_EMA_PERIOD",             config.MTF_EMA_PERIOD),
-                "VWAP_DEV_MULT":              get_config_override("VWAP_DEV_MULT",              config.VWAP_DEV_MULT),
-                "VOL_ACCEL_MULT":             get_config_override("VOL_ACCEL_MULT",             config.VOL_ACCEL_MULT),
-                "VOLUME_SPIKE_MULT":          get_config_override("VOLUME_SPIKE_MULT",          config.VOLUME_SPIKE_MULT),
+                "MTF_FILTER_ENABLED":          get_config_override("MTF_FILTER_ENABLED",          config.MTF_FILTER_ENABLED),
+                "MTF_EMA_PERIOD":              get_config_override("MTF_EMA_PERIOD",              config.MTF_EMA_PERIOD),
+                "VWAP_DEV_MULT":               get_config_override("VWAP_DEV_MULT",               config.VWAP_DEV_MULT),
+                "VOL_ACCEL_MULT":              get_config_override("VOL_ACCEL_MULT",              config.VOL_ACCEL_MULT),
+                "VOLUME_SPIKE_MULT":           get_config_override("VOLUME_SPIKE_MULT",           config.VOLUME_SPIKE_MULT),
                 # ── RSI ───────────────────────────────────────
-                "RSI_OVERBOUGHT":             get_config_override("RSI_OVERBOUGHT",             config.RSI_OVERBOUGHT),
-                "RSI_OVERSOLD":               get_config_override("RSI_OVERSOLD",               config.RSI_OVERSOLD),
+                "RSI_OVERBOUGHT":              get_config_override("RSI_OVERBOUGHT",              config.RSI_OVERBOUGHT),
+                "RSI_OVERSOLD":                get_config_override("RSI_OVERSOLD",                config.RSI_OVERSOLD),
                 # ── Stops / TP ────────────────────────────────
-                "ATR_STOP_MULT":              get_config_override("ATR_STOP_MULT",              config.ATR_STOP_MULT),
-                "ATR_TP_MULT":               get_config_override("ATR_TP_MULT",               config.ATR_TP_MULT),
-                "BREAKEVEN_ATR_MULT":         get_config_override("BREAKEVEN_ATR_MULT",         config.BREAKEVEN_ATR_MULT),
-                "MIN_RR":                     get_config_override("MIN_RR",                     config.MIN_RR),
+                "ATR_STOP_MULT":               get_config_override("ATR_STOP_MULT",               config.ATR_STOP_MULT),
+                "ATR_TP_MULT":                 get_config_override("ATR_TP_MULT",                 config.ATR_TP_MULT),
+                "BREAKEVEN_ATR_MULT":          get_config_override("BREAKEVEN_ATR_MULT",          config.BREAKEVEN_ATR_MULT),
+                "MIN_RR":                      get_config_override("MIN_RR",                      config.MIN_RR),
                 # ── Risk ──────────────────────────────────────
-                "SIMULATED_LEVERAGE":         get_config_override("SIMULATED_LEVERAGE",         config.SIMULATED_LEVERAGE),
-                "MAX_DAILY_LOSS_PCT":         get_config_override("MAX_DAILY_LOSS_PCT",         config.MAX_DAILY_LOSS_PCT),
-                "MAX_OPEN_TRADES":            get_config_override("MAX_OPEN_TRADES",            config.MAX_OPEN_TRADES),
-                "MAX_POSITION_PCT":           get_config_override("MAX_POSITION_PCT",           config.MAX_POSITION_PCT),
-                "LOSS_COOLDOWN_MINS":         get_config_override("LOSS_COOLDOWN_MINS",         config.LOSS_COOLDOWN_MINS),
+                "SIMULATED_LEVERAGE":          get_config_override("SIMULATED_LEVERAGE",          config.SIMULATED_LEVERAGE),
+                "MAX_DAILY_LOSS_PCT":          get_config_override("MAX_DAILY_LOSS_PCT",          config.MAX_DAILY_LOSS_PCT),
+                "MAX_OPEN_TRADES":             get_config_override("MAX_OPEN_TRADES",             config.MAX_OPEN_TRADES),
+                "MAX_POSITION_PCT":            get_config_override("MAX_POSITION_PCT",            config.MAX_POSITION_PCT),
+                "LOSS_COOLDOWN_MINS":          get_config_override("LOSS_COOLDOWN_MINS",          config.LOSS_COOLDOWN_MINS),
                 # ── Direction flip ────────────────────────────
-                "FLIP_ENABLED":               get_config_override("FLIP_ENABLED",               config.FLIP_ENABLED),
-                "FLIP_MIN_SIGNALS":           get_config_override("FLIP_MIN_SIGNALS",           config.FLIP_MIN_SIGNALS),
-                "FLIP_BASE_SCORE_MIN":        get_config_override("FLIP_BASE_SCORE_MIN",        config.FLIP_BASE_SCORE_MIN),
+                "FLIP_ENABLED":                get_config_override("FLIP_ENABLED",                config.FLIP_ENABLED),
+                "FLIP_MIN_SIGNALS":            get_config_override("FLIP_MIN_SIGNALS",            config.FLIP_MIN_SIGNALS),
+                "FLIP_BASE_SCORE_MIN":         get_config_override("FLIP_BASE_SCORE_MIN",         config.FLIP_BASE_SCORE_MIN),
                 # ── Dynamic TP ────────────────────────────────
-                "DYNAMIC_TP_ENABLED":         get_config_override("DYNAMIC_TP_ENABLED",         config.DYNAMIC_TP_ENABLED),
-                "DYNAMIC_TP_EXTENSION":       get_config_override("DYNAMIC_TP_EXTENSION",       config.DYNAMIC_TP_EXTENSION),
-                "DYNAMIC_TP_MIN_MOMENTUM":    get_config_override("DYNAMIC_TP_MIN_MOMENTUM",    config.DYNAMIC_TP_MIN_MOMENTUM),
+                "DYNAMIC_TP_ENABLED":          get_config_override("DYNAMIC_TP_ENABLED",          config.DYNAMIC_TP_ENABLED),
+                "DYNAMIC_TP_EXTENSION":        get_config_override("DYNAMIC_TP_EXTENSION",        config.DYNAMIC_TP_EXTENSION),
+                "DYNAMIC_TP_MIN_MOMENTUM":     get_config_override("DYNAMIC_TP_MIN_MOMENTUM",     config.DYNAMIC_TP_MIN_MOMENTUM),
                 # ── Scan speed ────────────────────────────────
-                "FAST_SCAN_ENABLED":          get_config_override("FAST_SCAN_ENABLED",          config.FAST_SCAN_ENABLED),
-                "FAST_SCAN_SCORE":            get_config_override("FAST_SCAN_SCORE",            config.FAST_SCAN_SCORE),
-                "FAST_SCAN_INTERVAL":         get_config_override("FAST_SCAN_INTERVAL",         config.FAST_SCAN_INTERVAL),
+                "FAST_SCAN_ENABLED":           get_config_override("FAST_SCAN_ENABLED",           config.FAST_SCAN_ENABLED),
+                "FAST_SCAN_SCORE":             get_config_override("FAST_SCAN_SCORE",             config.FAST_SCAN_SCORE),
+                "FAST_SCAN_INTERVAL":          get_config_override("FAST_SCAN_INTERVAL",          config.FAST_SCAN_INTERVAL),
             },
             "todays_price_action": bar_data,
         }
@@ -534,8 +548,8 @@ Write a daily review. Keep it simple and direct. Include:
 4. What was the biggest move the bot missed and why?
 5. One specific thing the bot is doing wrong
 6. One or two concrete config changes to make tomorrow — reference exact variable
-   names from current_config and suggest specific values (e.g. "raise BREAKEVEN_ATR_MULT
-   from 1.5 to 2.0 because trades are getting shaken out too early")
+names from current_config and suggest specific values (e.g. "raise BREAKEVEN_ATR_MULT
+from 1.5 to 2.0 because trades are getting shaken out too early")
 
 Keep the whole thing under 300 words. Write it like you're talking to a high school
 student who built this bot. Be specific — reference actual prices, times, and config
@@ -545,16 +559,16 @@ variable names."""
             response = requests.post(
                 "https://api.anthropic.com/v1/messages",
                 headers={
-                    "x-api-key":          ANTHROPIC_API_KEY,
-                    "anthropic-version":  "2023-06-01",
-                    "content-type":       "application/json"
+                    "x-api-key":         ANTHROPIC_API_KEY,
+                    "anthropic-version": "2023-06-01",
+                    "content-type":      "application/json"
                 },
                 json={
                     "model":      "claude-sonnet-4-20250514",
-                    "max_tokens": 1024,   # bumped up to handle richer analysis
+                    "max_tokens": 1024,
                     "messages":   [{"role": "user", "content": prompt}]
                 },
-                timeout=45,   # longer timeout for bigger prompt
+                timeout=45,
             )
             response.raise_for_status()
             claude_text = response.json()["content"][0]["text"]
@@ -621,7 +635,6 @@ variable names."""
             log.debug("[META] No GITHUB_TOKEN — skipping commit")
             return
         try:
-            # Get current SHA if file exists (needed for updates)
             sha = None
             r = requests.get(
                 f"{GITHUB_API}/repos/{GITHUB_REPO}/contents/{path}",
@@ -653,22 +666,6 @@ variable names."""
         except Exception as e:
             log.error(f"[META] GitHub commit error: {e}")
 
-    def _fetch_code_context(self) -> str:
-        """Fetch key strategy files from GitHub for Claude to read."""
-        files = {
-            "config.py":              "config.py",
-            "strategies/ema_vwap.py": "ema_vwap.py",
-            "risk/manager.py":        "risk/manager.py",
-        }
-        context = ""
-        for path, label in files.items():
-            code = self._fetch_github_file(path)
-            if code:
-                # Trim to avoid token overload — first 120 lines is enough
-                lines = code.split("\n")[:120]
-                context += f"\n\n### {label}\n```python\n" + "\n".join(lines) + "\n```"
-        return context
-
     def _write_suggestions_to_github(self, claude_text: str, stats: dict, date_str: str):
         """Ask Claude to extract concrete suggestions and commit them to GitHub."""
         if not GITHUB_TOKEN:
@@ -698,8 +695,8 @@ variable names."""
     def _save_review(self, stats, missed, issues, adjustments, report):
         """Save review to DB."""
         by_hour    = stats.get("by_hour", [])
-        best_hour  = max(by_hour, key=lambda x: x["pnl"])["hour"] if by_hour else None
-        worst_hour = min(by_hour, key=lambda x: x["pnl"])["hour"] if by_hour else None
+        best_hour  = max(by_hour, key=lambda x: x["pnl"])["hour"]  if by_hour else None
+        worst_hour = min(by_hour, key=lambda x: x["pnl"])["hour"]  if by_hour else None
 
         with get_conn() as conn:
             cur = conn.cursor()
@@ -713,8 +710,8 @@ variable names."""
             """, (
                 str(uuid.uuid4())[:8],
                 datetime.utcnow(),
-                stats.get("win_rate", 0),
-                stats.get("avg_rr", 0),
+                stats.get("win_rate",  0),
+                stats.get("avg_rr",    0),
                 best_hour,
                 worst_hour,
                 missed.get("missed_wins", 0),
