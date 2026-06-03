@@ -1,14 +1,21 @@
 """
-strategies/ema_vwap.py — EMA + VWAP Momentum Strategy (v3)
+strategies/ema_vwap.py — EMA + VWAP Momentum Strategy (v4)
 
-Two-layer scoring gate:
+v4 changes:
+  - Direction (long/short/none) is now decided by a Claude Haiku API call
+    instead of a raw EMA9 vs EMA21 cross. Claude receives price, VWAP,
+    RSI, MACD histogram, ATR, and the last 15 candles and returns one word.
+  - Falls back to EMA cross automatically if API is unavailable or times out.
+  - EMA cross is still computed and logged but no longer drives direction alone.
+
+Two-layer scoring gate (unchanged):
   Layer 1 — Base signals (5): need BASE_MIN to enter
     1. EMA trend      — direction filter
     2. VWAP side      — institutional positioning
     3. Vol accel      — intra-candle volume projection
     4. RSI confirm    — not overextended
     5. VWAP deviation — breakout strength
-  
+
   Layer 2 — Momentum confirmators (3): need MOMENTUM_GATE_MIN to enter
     6. ROC            — price acceleration (speed)
     7. MACD           — momentum building beneath surface (build)
@@ -21,6 +28,7 @@ Two-layer scoring gate:
 
 import math
 import logging
+import requests as _requests
 import pytz
 from dataclasses import dataclass, field
 from typing import Optional
@@ -34,6 +42,107 @@ import config
 
 log = logging.getLogger(__name__)
 ET  = pytz.timezone("America/New_York")
+
+
+# ── Claude direction call ─────────────────────────────────────────────────────
+
+def _claude_direction(symbol: str, cache: dict, candles: list,
+                      atr: float) -> str:
+    """
+    Ask Claude Haiku to determine trade direction based on current market data.
+    Returns 'long', 'short', or 'none'.
+    Falls back to EMA cross if API call fails or times out.
+
+    Cost: ~$0.001 per call (Haiku). Called once per symbol per 60s slow loop.
+    Latency: typically 1-3s, timeout set to 8s.
+    """
+    api_key = getattr(config, "ANTHROPIC_API_KEY", "")
+
+    ema9  = cache.get("ema9",  0)
+    ema21 = cache.get("ema21", 0)
+
+    def _ema_fallback():
+        if ema9 > ema21: return "long"
+        if ema9 < ema21: return "short"
+        return "none"
+
+    if not api_key:
+        log.debug(f"[CLAUDE-DIR] No API key — falling back to EMA for {symbol}")
+        return _ema_fallback()
+
+    # Build candle summary — last 15 closed candles
+    recent = candles[-15:] if len(candles) >= 15 else candles
+    candle_lines = []
+    for i, c in enumerate(recent):
+        direction_char = "▲" if c["close"] >= c.get("open", c["close"]) else "▼"
+        candle_lines.append(
+            f"  [{i+1:2d}] {direction_char} H={c['high']:.2f} "
+            f"L={c['low']:.2f} C={c['close']:.2f} V={c.get('volume', 0):,}"
+        )
+    candle_str = "\n".join(candle_lines) if candle_lines else "  (no candle data)"
+
+    price = cache.get("price", 0)
+    rsi   = cache.get("rsi",   50)
+    vwap  = cache.get("vwap",  0)
+
+    vwap_relation = "ABOVE" if price > vwap else "BELOW"
+    ema_relation  = "EMA9 > EMA21 (bullish cross)" if ema9 > ema21 else "EMA9 < EMA21 (bearish cross)"
+    vwap_dist_pct = abs(price - vwap) / vwap * 100 if vwap > 0 else 0
+
+    prompt = f"""You are a direction filter for a momentum day trading bot trading {symbol}.
+Your ONLY job: decide if price is more likely to go UP (long), DOWN (short), or neither (none) over the next 5-15 minutes.
+
+=== CURRENT DATA ===
+Price:  ${price:.2f}
+VWAP:   ${vwap:.2f}  →  price is {vwap_relation} VWAP by {vwap_dist_pct:.2f}%
+EMA:    {ema_relation}
+RSI:    {rsi:.1f}
+ATR:    {atr:.4f}  (avg true range = normal volatility per minute)
+
+=== LAST {len(recent)} ONE-MINUTE CANDLES (oldest → newest) ===
+{candle_str}
+
+=== DECISION RULES ===
+- RSI > 72: avoid long (overbought)
+- RSI < 28: avoid short (oversold)
+- Price above VWAP + uptrend in candles → bias long
+- Price below VWAP + downtrend in candles → bias short
+- Choppy candles with no clear direction → none
+- Weight the last 4-5 candles most heavily
+- If conviction is low or mixed signals → none
+
+Respond with EXACTLY one word — long, short, or none. No punctuation, no explanation."""
+
+    try:
+        r = _requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key":         api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type":      "application/json"
+            },
+            json={
+                "model":      "claude-haiku-4-5-20251001",
+                "max_tokens": 5,
+                "messages":   [{"role": "user", "content": prompt}]
+            },
+            timeout=8
+        )
+        r.raise_for_status()
+        answer = r.json()["content"][0]["text"].strip().lower().rstrip(".")
+
+        if answer in ("long", "short", "none"):
+            log.info(f"[CLAUDE-DIR] {symbol} → {answer} (RSI={rsi:.1f} price={price:.2f} VWAP={vwap:.2f})")
+            return answer
+
+        log.warning(f"[CLAUDE-DIR] {symbol} unexpected response: '{answer}' — falling back to EMA")
+
+    except _requests.exceptions.Timeout:
+        log.warning(f"[CLAUDE-DIR] {symbol} API timeout — falling back to EMA")
+    except Exception as e:
+        log.warning(f"[CLAUDE-DIR] {symbol} API error: {e} — falling back to EMA")
+
+    return _ema_fallback()
 
 
 # ── EMA helpers ───────────────────────────────────────────────────────────────
@@ -78,15 +187,7 @@ def _calc_macd(candles: list, fast: int = 12, slow: int = 26,
                signal_period: int = 9) -> tuple:
     """
     MACD histogram confirmation.
-
-    Measures momentum building beneath the surface — fires when momentum
-    is accelerating in the signal direction, before price has fully moved.
-
-    long_ok:  histogram positive AND growing  (bullish momentum building)
-    short_ok: histogram negative AND falling  (bearish momentum building)
-
     Returns (long_ok, short_ok, histogram_value)
-    Minimum candles needed: slow + signal_period + 2
     """
     min_candles = slow + signal_period + 2
     if len(candles) < min_candles:
@@ -100,8 +201,6 @@ def _calc_macd(candles: list, fast: int = 12, slow: int = 26,
     if not ema_fast or not ema_slow:
         return False, False, 0.0
 
-    # Align: ema_slow is shorter, offset ema_fast to match
-    # ema_fast[i + offset] and ema_slow[i] both correspond to closes[slow-1+i]
     offset = slow - fast
     if offset < 0 or offset >= len(ema_fast):
         return False, False, 0.0
@@ -130,14 +229,7 @@ def _calc_macd(candles: list, fast: int = 12, slow: int = 26,
 def _calc_candle_consistency(candles: list, lookback: int = 3,
                               min_consistent: int = 2,
                               direction: str = "long") -> bool:
-    """
-    Counts how many of the last N candles moved in the signal direction.
-    Uses close-to-close comparison (no open data needed).
-
-    Catches sustained pressure that ROC and MACD miss — 3 small consistent
-    candles in one direction is more reliable than 1 big spike.
-    """
-    needed = lookback + 1  # +1 for comparison baseline
+    needed = lookback + 1
     if len(candles) < needed:
         return False
 
@@ -156,15 +248,8 @@ def _calc_candle_consistency(candles: list, lookback: int = 3,
 
 def _check_mtf_filter(candles: list, direction: str,
                        ema_period: int = 21) -> bool:
-    """
-    Multi-timeframe filter using a slow EMA on 1-min candles.
-    EMA21 on 1-min ≈ 21-minute trend direction.
-
-    Prevents entering against the broader trend even when 1-min signals align.
-    Returns True (pass) if trend agrees with direction or not enough data.
-    """
     if len(candles) < ema_period + 2:
-        return True  # not enough data — don't block
+        return True
 
     closes   = [c["close"] for c in candles]
     ema_vals = _ema_list(closes, ema_period)
@@ -314,7 +399,7 @@ class Signal:
 class EMAVWAPStrategy:
 
     def __init__(self):
-        log.info("[STRAT] EMA/VWAP strategy loaded ✓ (v3 — two-layer gate)")
+        log.info("[STRAT] EMA/VWAP strategy loaded ✓ (v4 — Claude direction)")
 
     def _get(self, key, default):
         return get_config_override(key, default)
@@ -325,7 +410,6 @@ class EMAVWAPStrategy:
         return float(self._get(override_key, default))
 
     def _is_prime_time(self) -> bool:
-        """9:30am–PRIME_END_HOUR ET is prime time — lower score threshold."""
         now  = datetime.now(ET)
         end  = int(self._get("PRIME_END_HOUR", getattr(config, "PRIME_END_HOUR", 11)))
         return (now.hour == 9 and now.minute >= 30) or (9 < now.hour < end)
@@ -400,21 +484,29 @@ class EMAVWAPStrategy:
         min_atr_floor = float(sym_profile["min_atr_floor"]) if sym_profile and sym_profile.get("min_atr_floor") else price * min_atr_pct
         atr = max(atr, min_atr_floor)
 
-        # ── Direction ─────────────────────────────────────────
-        if ema9 > ema21:
-            direction = "long"
-        elif ema9 < ema21:
-            direction = "short"
-        else:
-            return None
-
         candles = candles or []
 
         # ══════════════════════════════════════════════════════
-        # BASE SIGNALS (5) — validate the setup
+        # DIRECTION — Claude Haiku API call
+        # Falls back to EMA cross if API unavailable
+        # ══════════════════════════════════════════════════════
+        direction = _claude_direction(symbol, cache, candles, atr)
+        if direction == "none":
+            # Still log the signal for diagnostics even when direction is none
+            log_signal(
+                symbol=symbol, score=0, direction=None,
+                ema_cross=False, vwap_side=False, volume_spike=False,
+                rsi_confirm=False, price_action=False, price=price, atr=atr,
+                roc_confirm=False, macd_confirm=False, candle_confirm=False,
+                mtf_ok=False, momentum_score=0, roc_value=0.0, macd_histogram=0.0
+            )
+            return None
+
+        # ══════════════════════════════════════════════════════
+        # BASE SIGNALS (5) — validate the setup quality
         # ══════════════════════════════════════════════════════
 
-        # 1. EMA trend
+        # 1. EMA trend agrees with Claude direction
         ema_ok = (ema9 > ema21) if direction == "long" else (ema9 < ema21)
 
         # 2. VWAP side
@@ -436,15 +528,15 @@ class EMAVWAPStrategy:
         # MOMENTUM SIGNALS (3) — validate the timing
         # ══════════════════════════════════════════════════════
 
-        # 6. ROC — price acceleration (speed)
+        # 6. ROC — price acceleration
         roc_value = _calc_roc(candles, period=roc_period)
         roc_ok    = (roc_value >= roc_min_long) if direction == "long" else (roc_value <= roc_min_short)
 
-        # 7. MACD — momentum building (build)
+        # 7. MACD — momentum building
         macd_long_ok, macd_short_ok, macd_hist = _calc_macd(candles, macd_fast, macd_slow, macd_signal)
         macd_ok = macd_long_ok if direction == "long" else macd_short_ok
 
-        # 8. Candle consistency — sustained pressure (persistence)
+        # 8. Candle consistency — sustained pressure
         candle_ok = _calc_candle_consistency(candles, cc_lookback, cc_min, direction)
 
         momentum_score = sum([roc_ok, macd_ok, candle_ok])
@@ -457,7 +549,7 @@ class EMAVWAPStrategy:
             mtf_ok = _check_mtf_filter(candles, direction, mtf_period)
 
         # ══════════════════════════════════════════════════════
-        # GATE CHECK
+        # GATE CHECK — must pass base score, momentum gate, MTF
         # ══════════════════════════════════════════════════════
         base_pass  = base_score >= base_min
         mom_pass   = (not mom_gate_enabled) or (momentum_score >= mom_gate_min)
@@ -473,7 +565,7 @@ class EMAVWAPStrategy:
             stop_loss   = price + (atr * stop_mult)
             take_profit = price - (atr * tp_mult)
 
-        # ── Log to DB (using base signals for existing columns) ─
+        # ── Log to DB ─────────────────────────────────────────
         sig_id = log_signal(
             symbol=symbol,
             score=base_score,
