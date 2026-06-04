@@ -163,6 +163,7 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
     <div class="stat-card"><div class="stat-label">7-Day P&L</div><div class="stat-value" id="week-pnl">$0.00</div><div class="stat-sub" id="week-wr">—% win rate</div></div>
     <div class="stat-card"><div class="stat-label">Claude API</div><div class="stat-value green" id="api-stat-val">OK</div><div class="stat-sub" id="api-stat-sub">checking...</div></div>
     <div class="stat-card"><div class="stat-label">Limit Remaining</div><div class="stat-value green" id="limit-left">$600</div><div class="stat-sub">before kill switch</div></div>
+    <div class="stat-card" style="cursor:pointer" onclick="loadMorningCall()"><div class="stat-label">Opus Bias Today</div><div class="stat-value" id="morning-bias-val">—</div><div class="stat-sub" id="morning-favor-sub">no call yet</div></div>
   </div>
   <div class="panel">
     <div class="panel-header">
@@ -174,6 +175,20 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
         <thead><tr><th>Symbol</th><th>Side</th><th>Entry</th><th>Stop</th><th>Target</th><th>P&L</th><th>Score</th><th>Held</th></tr></thead>
         <tbody id="open-trades-body"><tr><td colspan="8" class="empty-state">No open positions</td></tr></tbody>
       </table>
+    </div>
+  </div>
+  <div class="panel" style="border-color:rgba(139,92,246,0.25)">
+    <div class="panel-header">
+      <div class="panel-title"><i class="ti ti-brain"></i> Opus 4.8 Pre-Market Call</div>
+      <div style="font-size:10px;color:var(--text-muted)" id="morning-call-date">—</div>
+    </div>
+    <div class="panel-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:10px">
+        <div class="sym-stat"><div class="sym-stat-label">Overall Bias</div><div class="sym-stat-val" id="morning-bias-detail" style="color:var(--purple)">—</div></div>
+        <div class="sym-stat"><div class="sym-stat-label">Favor (1.5x size)</div><div class="sym-stat-val" id="morning-favor-detail" style="color:var(--green);font-size:11px">—</div></div>
+        <div class="sym-stat"><div class="sym-stat-label">Avoid (0.5x size)</div><div class="sym-stat-val" id="morning-avoid-detail" style="color:var(--red);font-size:11px">—</div></div>
+      </div>
+      <div style="font-size:11px;color:var(--text-secondary);font-style:italic" id="morning-notes-detail">No morning call yet — runs at 9:25am ET</div>
     </div>
   </div>
   <div class="two-col">
@@ -447,6 +462,11 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
   <div class="ctrls-row">
     <div class="ctrl-group">
       <h3><i class="ti ti-shield"></i> Capital & Limits</h3>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">Risk per trade %</div><div class="ctrl-hint">% of capital at risk per trade — controls position size. 2%=conservative, 5%=aggressive, 10%=max</div></div>
+        <input type="range" min="0.5" max="10" step="0.5" id="ctrl-RISK_PER_TRADE_pct" oninput="updateValPct(this,'RISK_PER_TRADE')">
+        <div class="ctrl-val" id="val-RISK_PER_TRADE">2%</div>
+      </div>
       <div class="ctrl-row">
         <div><div class="ctrl-label">Simulated leverage</div></div>
         <input type="range" min="1" max="20" step="1" id="ctrl-SIMULATED_LEVERAGE" oninput="updateVal(this,'x')">
@@ -957,8 +977,14 @@ async function loadConfig(){
     s('SIMULATED_LEVERAGE',cfg.SIMULATED_LEVERAGE,'x');
     s('MAX_OPEN_TRADES',cfg.MAX_OPEN_TRADES);
     s('ATR_STOP_MULT',cfg.ATR_STOP_MULT); s('ATR_TP_MULT',cfg.ATR_TP_MULT);
-    s('BREAKEVEN_ATR_MULT',cfg.BREAKEVEN_ATR_MULT); s('TRAIL_STEP',cfg.TRAIL_STEP??0.5);
+    s('BREAKEVEN_ATR_MULT',cfg.BREAKEVEN_ATR_MULT); s('TRAIL_STEP',cfg.TRAIL_STEP??1.0);
     s('MIN_RR',cfg.MIN_RR); s('LOSS_COOLDOWN_MINS',cfg.LOSS_COOLDOWN_MINS,'m');
+    // Risk per trade % slider
+    const rtPct=Math.round((cfg.RISK_PER_TRADE??0.02)*100*2)/2; // round to nearest 0.5
+    const rtEl=document.getElementById('ctrl-RISK_PER_TRADE_pct');
+    if(rtEl)rtEl.value=rtPct;
+    document.getElementById('val-RISK_PER_TRADE').textContent=rtPct+'%';
+    configState['RISK_PER_TRADE']=cfg.RISK_PER_TRADE??0.02;
     s('MACD_FAST',cfg.MACD_FAST??5); s('MACD_SLOW',cfg.MACD_SLOW??13);
     s('MACD_SIGNAL_PERIOD',cfg.MACD_SIGNAL_PERIOD??9);
     s('MOMENTUM_GATE_MIN',cfg.MOMENTUM_GATE_MIN);
@@ -1143,11 +1169,36 @@ function loadLogs(){
   }).catch(()=>{document.getElementById('log-container').innerHTML='<div style="color:var(--red)">Failed to load.</div>';});
 }
 
+async function loadMorningCall(){
+  try{
+    const d=await fetch('/api/morning').then(r=>r.json());
+    if(d.error)return;
+    const biasEl=document.getElementById('morning-bias-val');
+    const biasD=document.getElementById('morning-bias-detail');
+    const favorD=document.getElementById('morning-favor-detail');
+    const avoidD=document.getElementById('morning-avoid-detail');
+    const notesD=document.getElementById('morning-notes-detail');
+    const dateEl=document.getElementById('morning-call-date');
+    const bias=d.bias||'none';
+    const color=bias==='long'?'var(--green)':bias==='short'?'var(--red)':'var(--text-muted)';
+    if(biasEl){biasEl.textContent=bias.toUpperCase();biasEl.style.color=color;}
+    if(biasD){biasD.textContent=bias.toUpperCase();biasD.style.color=color;}
+    if(favorD)favorD.textContent=d.favor||'none';
+    if(avoidD)avoidD.textContent=d.avoid||'none';
+    if(notesD)notesD.textContent=d.notes||'No call yet';
+    if(dateEl)dateEl.textContent=d.date||'—';
+    const subEl=document.getElementById('morning-favor-sub');
+    if(subEl)subEl.textContent=d.favor?`favor: ${d.favor}`:'no call yet';
+  }catch(e){}
+}
+
 marketStatus();
 loadOverview();
 loadAPIHealth();
+loadMorningCall();
 setInterval(loadOverview,30000);
 setInterval(loadAPIHealth,60000);
+setInterval(loadMorningCall,300000); // refresh every 5 min
 setInterval(marketStatus,30000);
 setInterval(loadLogs,60000);
 </script>
