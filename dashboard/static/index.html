@@ -12,285 +12,376 @@
   --navy-darkest:#060d1f; --navy-dark:#0a1628; --navy-mid:#0f2040;
   --navy-light:#162d55; --navy-accent:#1e3d72; --blue-bright:#2563eb;
   --blue-glow:#3b82f6; --cyan:#06b6d4; --green:#10b981; --red:#ef4444;
-  --amber:#f59e0b; --text-primary:#e8edf8; --text-secondary:#8ba3c7;
-  --text-muted:#4a6080; --border:rgba(255,255,255,0.07);
-  --border-bright:rgba(255,255,255,0.12); --card-bg:rgba(255,255,255,0.04);
-  --card-hover:rgba(255,255,255,0.06);
+  --amber:#f59e0b; --purple:#8b5cf6; --text-primary:#e8edf8;
+  --text-secondary:#8ba3c7; --text-muted:#4a6080;
+  --border:rgba(255,255,255,0.07); --border-bright:rgba(255,255,255,0.12);
+  --card-bg:rgba(255,255,255,0.04); --card-hover:rgba(255,255,255,0.06);
 }
 body { font-family:'SF Mono','JetBrains Mono','Fira Code',monospace; background:var(--navy-darkest); color:var(--text-primary); min-height:100vh; font-size:13px; }
 .header { background:var(--navy-dark); border-bottom:1px solid var(--border); padding:0 24px; display:flex; align-items:center; justify-content:space-between; height:56px; position:sticky; top:0; z-index:100; }
 .logo { display:flex; align-items:center; gap:10px; font-size:15px; font-weight:600; letter-spacing:0.05em; }
 .logo-dot { width:8px; height:8px; border-radius:50%; background:var(--green); animation:pulse 2s infinite; }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-.header-right { display:flex; align-items:center; gap:16px; font-size:12px; }
+@keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+.header-right { display:flex; align-items:center; gap:12px; font-size:12px; }
 .status-badge { display:flex; align-items:center; gap:6px; padding:4px 10px; border-radius:20px; border:1px solid var(--border-bright); background:var(--card-bg); }
 .status-dot { width:6px; height:6px; border-radius:50%; background:var(--green); animation:pulse 2s infinite; }
-.tabs { background:var(--navy-dark); border-bottom:1px solid var(--border); padding:0 24px; display:flex; }
-.tab { padding:14px 20px; cursor:pointer; color:var(--text-muted); font-size:12px; letter-spacing:0.06em; text-transform:uppercase; border-bottom:2px solid transparent; transition:all 0.15s; display:flex; align-items:center; gap:7px; }
+.api-badge { display:flex; align-items:center; gap:5px; padding:3px 9px; border-radius:12px; font-size:10px; font-weight:600; letter-spacing:0.05em; cursor:pointer; transition:all 0.15s; }
+.api-badge.healthy { background:rgba(16,185,129,0.15); color:var(--green); border:1px solid rgba(16,185,129,0.3); }
+.api-badge.degraded { background:rgba(245,158,11,0.15); color:var(--amber); border:1px solid rgba(245,158,11,0.3); }
+.api-badge.down { background:rgba(239,68,68,0.15); color:var(--red); border:1px solid rgba(239,68,68,0.3); }
+.api-badge.fallback { background:rgba(139,92,246,0.15); color:var(--purple); border:1px solid rgba(139,92,246,0.3); }
+.tabs { background:var(--navy-dark); border-bottom:1px solid var(--border); padding:0 20px; display:flex; overflow-x:auto; }
+.tabs::-webkit-scrollbar { height:0; }
+.tab { padding:14px 14px; cursor:pointer; color:var(--text-muted); font-size:11px; letter-spacing:0.06em; text-transform:uppercase; border-bottom:2px solid transparent; transition:all 0.15s; display:flex; align-items:center; gap:6px; white-space:nowrap; flex-shrink:0; }
 .tab:hover { color:var(--text-secondary); }
 .tab.active { color:var(--blue-glow); border-bottom-color:var(--blue-glow); }
-.content { padding:24px; display:none; }
+.content { padding:22px; display:none; }
 .content.active { display:block; }
-.stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:24px; }
-.stat-card { background:var(--card-bg); border:1px solid var(--border); border-radius:10px; padding:16px; transition:border-color 0.15s; }
+.stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:18px; }
+.stat-card { background:var(--card-bg); border:1px solid var(--border); border-radius:10px; padding:14px; transition:border-color 0.15s; position:relative; overflow:hidden; }
+.stat-card::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; background:var(--blue-bright); opacity:0; transition:opacity 0.2s; }
 .stat-card:hover { border-color:var(--border-bright); }
-.stat-label { font-size:10px; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-muted); margin-bottom:8px; }
-.stat-value { font-size:22px; font-weight:600; letter-spacing:-0.02em; }
-.stat-value.green{color:var(--green)} .stat-value.red{color:var(--red)} .stat-value.cyan{color:var(--cyan)}
-.stat-sub { font-size:10px; color:var(--text-muted); margin-top:4px; }
-.panel { background:var(--card-bg); border:1px solid var(--border); border-radius:10px; margin-bottom:16px; overflow:hidden; }
-.panel-header { padding:14px 18px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
-.panel-title { font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-secondary); display:flex; align-items:center; gap:8px; }
-.panel-body { padding:16px 18px; }
+.stat-card:hover::before { opacity:1; }
+.stat-label { font-size:9px; letter-spacing:0.12em; text-transform:uppercase; color:var(--text-muted); margin-bottom:6px; }
+.stat-value { font-size:20px; font-weight:600; letter-spacing:-0.02em; }
+.stat-value.green{color:var(--green)} .stat-value.red{color:var(--red)} .stat-value.cyan{color:var(--cyan)} .stat-value.amber{color:var(--amber)} .stat-value.purple{color:var(--purple)}
+.stat-sub { font-size:9px; color:var(--text-muted); margin-top:4px; }
+.panel { background:var(--card-bg); border:1px solid var(--border); border-radius:10px; margin-bottom:14px; overflow:hidden; }
+.panel-header { padding:11px 15px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
+.panel-title { font-size:10px; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-secondary); display:flex; align-items:center; gap:8px; }
+.panel-body { padding:14px 15px; }
 .data-table { width:100%; border-collapse:collapse; }
-.data-table th { text-align:left; font-size:10px; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-muted); padding:8px 12px; border-bottom:1px solid var(--border); font-weight:400; }
-.data-table td { padding:10px 12px; border-bottom:1px solid var(--border); color:var(--text-secondary); font-size:12px; }
+.data-table th { text-align:left; font-size:9px; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-muted); padding:7px 10px; border-bottom:1px solid var(--border); font-weight:400; }
+.data-table td { padding:8px 10px; border-bottom:1px solid var(--border); color:var(--text-secondary); font-size:11px; }
 .data-table tr:last-child td { border-bottom:none; }
 .data-table tr:hover td { background:var(--card-hover); }
-.badge { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:4px; font-size:10px; font-weight:500; letter-spacing:0.05em; }
+.badge { display:inline-flex; align-items:center; gap:3px; padding:2px 7px; border-radius:4px; font-size:9px; font-weight:600; letter-spacing:0.05em; }
 .badge-long{background:rgba(16,185,129,0.15);color:var(--green)} .badge-short{background:rgba(239,68,68,0.15);color:var(--red)}
 .badge-open{background:rgba(59,130,246,0.15);color:var(--blue-glow)} .badge-closed{background:rgba(139,163,199,0.15);color:var(--text-secondary)}
-.badge-stopped{background:rgba(245,158,11,0.15);color:var(--amber)}
+.badge-stopped{background:rgba(245,158,11,0.15);color:var(--amber)} .badge-none{background:rgba(74,96,128,0.15);color:var(--text-muted)}
+.badge-healthy{background:rgba(16,185,129,0.15);color:var(--green)} .badge-degraded{background:rgba(245,158,11,0.15);color:var(--amber)}
+.badge-fallback{background:rgba(139,92,246,0.15);color:var(--purple)} .badge-new{background:rgba(16,185,129,0.15);color:var(--green)}
+.badge-group{background:rgba(59,130,246,0.15);color:var(--blue-glow)}
 .score-bar { display:flex; gap:3px; align-items:center; }
-.score-pip { width:14px; height:5px; border-radius:2px; background:var(--text-muted); }
+.score-pip { width:12px; height:4px; border-radius:2px; background:var(--navy-accent); }
 .score-pip.filled { background:var(--blue-glow); }
-
-/* Controls layout */
-.ctrls-row { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px; }
+/* Symbol cards */
+.sym-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(255px,1fr)); gap:12px; margin-bottom:16px; }
+.sym-card { background:var(--card-bg); border:1px solid var(--border); border-radius:10px; padding:15px; }
+.sym-card.trending { border-color:rgba(59,130,246,0.25); }
+.sym-card.ranging { opacity:0.65; }
+.sym-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:11px; }
+.sym-name { font-size:14px; font-weight:700; letter-spacing:0.04em; }
+.sym-grid-inner { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.sym-stat { background:rgba(255,255,255,0.03); border-radius:6px; padding:6px 8px; }
+.sym-stat-label { font-size:8px; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-muted); margin-bottom:3px; }
+.sym-stat-val { font-size:12px; font-weight:600; }
+.adx-bar { height:3px; border-radius:2px; background:var(--navy-accent); margin-top:4px; overflow:hidden; }
+.adx-fill { height:100%; border-radius:2px; transition:width 0.5s; }
+/* Risk */
+.risk-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px; margin-bottom:16px; }
+.risk-card { background:var(--card-bg); border:1px solid var(--border); border-radius:10px; padding:15px; }
+.risk-card.danger { border-color:rgba(239,68,68,0.4); background:rgba(239,68,68,0.04); }
+.risk-card.warning { border-color:rgba(245,158,11,0.3); }
+.risk-card.good { border-color:rgba(16,185,129,0.25); }
+.progress-bar { height:5px; border-radius:3px; background:var(--navy-accent); margin-top:8px; overflow:hidden; }
+.progress-fill { height:100%; border-radius:3px; transition:width 0.5s; }
+.cooldown-item { display:flex; align-items:center; justify-content:space-between; padding:7px 0; border-bottom:1px solid var(--border); font-size:11px; }
+.cooldown-item:last-child { border-bottom:none; }
+/* Controls */
+.ctrls-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px; }
 .ctrls-row.single { grid-template-columns:1fr; }
-.ctrl-group { background:var(--card-bg); border:1px solid var(--border); border-radius:10px; padding:18px; }
-.ctrl-group h3 { font-size:10px; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-muted); margin-bottom:16px; display:flex; align-items:center; gap:8px; }
-.ctrl-group h3 .badge-group { font-size:9px; padding:1px 6px; border-radius:3px; background:rgba(59,130,246,0.15); color:var(--blue-glow); letter-spacing:0.05em; text-transform:none; }
-.ctrl-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; gap:12px; }
+.ctrl-group { background:var(--card-bg); border:1px solid var(--border); border-radius:10px; padding:15px; }
+.ctrl-group h3 { font-size:9px; letter-spacing:0.12em; text-transform:uppercase; color:var(--text-muted); margin-bottom:13px; display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+.ctrl-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:11px; gap:10px; }
 .ctrl-row:last-child { margin-bottom:0; }
-.ctrl-label { font-size:12px; color:var(--text-secondary); flex:1; min-width:0; }
-.ctrl-hint { font-size:10px; color:var(--text-muted); margin-top:2px; }
-.ctrl-val { font-size:12px; color:var(--cyan); font-weight:600; min-width:44px; text-align:right; }
-input[type="range"] { -webkit-appearance:none; width:110px; height:4px; background:var(--navy-accent); border-radius:2px; outline:none; flex-shrink:0; }
-input[type="range"]::-webkit-slider-thumb { -webkit-appearance:none; width:14px; height:14px; border-radius:50%; background:var(--blue-bright); cursor:pointer; border:2px solid var(--navy-darkest); }
-input[type="range"].disabled-slider { opacity:0.3; pointer-events:none; }
-.save-btn { background:var(--blue-bright); color:white; border:none; padding:10px 24px; border-radius:6px; font-size:12px; font-family:inherit; letter-spacing:0.05em; cursor:pointer; transition:opacity 0.15s; }
+.ctrl-label { font-size:11px; color:var(--text-secondary); flex:1; min-width:0; }
+.ctrl-hint { font-size:9px; color:var(--text-muted); margin-top:2px; line-height:1.4; }
+.ctrl-val { font-size:11px; color:var(--cyan); font-weight:600; min-width:38px; text-align:right; }
+input[type="range"] { -webkit-appearance:none; width:95px; height:4px; background:var(--navy-accent); border-radius:2px; outline:none; flex-shrink:0; }
+input[type="range"]::-webkit-slider-thumb { -webkit-appearance:none; width:13px; height:13px; border-radius:50%; background:var(--blue-bright); cursor:pointer; border:2px solid var(--navy-darkest); }
+.save-btn { background:var(--blue-bright); color:white; border:none; padding:9px 20px; border-radius:6px; font-size:11px; font-family:inherit; letter-spacing:0.05em; cursor:pointer; transition:opacity 0.15s; }
 .save-btn:hover { opacity:0.85; }
-.toggle-switch { position:relative; display:inline-block; width:42px; height:22px; cursor:pointer; flex-shrink:0; }
+.danger-btn { background:rgba(239,68,68,0.12); color:var(--red); border:1px solid rgba(239,68,68,0.3); padding:9px 20px; border-radius:6px; font-size:11px; font-family:inherit; cursor:pointer; transition:all 0.15s; }
+.danger-btn:hover { background:rgba(239,68,68,0.22); }
+.toggle-switch { position:relative; display:inline-block; width:38px; height:20px; cursor:pointer; flex-shrink:0; }
 .toggle-switch input { opacity:0; width:0; height:0; position:absolute; }
-.toggle-track { position:absolute; inset:0; border-radius:22px; background:var(--navy-accent); border:1px solid var(--border-bright); transition:background 0.2s; }
-.toggle-thumb { position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:var(--text-muted); transition:left 0.2s,background 0.2s; pointer-events:none; }
+.toggle-track { position:absolute; inset:0; border-radius:20px; background:var(--navy-accent); border:1px solid var(--border-bright); transition:background 0.2s; }
+.toggle-thumb { position:absolute; top:2px; left:2px; width:14px; height:14px; border-radius:50%; background:var(--text-muted); transition:left 0.2s,background 0.2s; pointer-events:none; }
 .toggle-switch input:checked + .toggle-track { background:var(--blue-bright); }
-.toggle-switch input:checked + .toggle-track .toggle-thumb { left:22px; background:white; }
-.divider { height:1px; background:var(--border); margin:14px 0; }
-.dimmed { opacity:0.35; pointer-events:none; }
-input[type="number"].num-input { width:52px; background:var(--navy-mid); border:1px solid var(--border-bright); border-radius:4px; color:var(--cyan); font-family:inherit; font-size:12px; padding:4px 8px; text-align:center; outline:none; }
+.toggle-switch input:checked + .toggle-track .toggle-thumb { left:20px; background:white; }
+.divider { height:1px; background:var(--border); margin:11px 0; }
+.dimmed { opacity:0.3; pointer-events:none; }
+input[type="number"].num-input { width:46px; background:var(--navy-mid); border:1px solid var(--border-bright); border-radius:4px; color:var(--cyan); font-family:inherit; font-size:11px; padding:3px 5px; text-align:center; outline:none; }
 input[type="number"].num-input:focus { border-color:var(--blue-glow); }
-.log-container { background:var(--navy-darkest); border:1px solid var(--border); border-radius:8px; padding:16px; height:500px; overflow-y:auto; font-size:11px; line-height:1.8; }
-.log-entry { display:flex; gap:12px; }
-.log-time { color:var(--text-muted); white-space:nowrap; }
-.log-level-info { color:var(--blue-glow); }
+.section-label { font-size:9px; letter-spacing:0.12em; text-transform:uppercase; color:var(--text-muted); margin:16px 0 10px; display:flex; align-items:center; gap:8px; }
+.section-label::after { content:''; flex:1; height:1px; background:var(--border); }
+.log-container { background:var(--navy-darkest); border:1px solid var(--border); border-radius:8px; padding:13px; height:480px; overflow-y:auto; font-size:11px; line-height:1.9; }
+.log-entry { display:flex; gap:10px; padding:1px 0; }
+.log-time { color:var(--text-muted); white-space:nowrap; min-width:42px; }
+.log-tag { min-width:48px; font-weight:700; }
 .log-msg { color:var(--text-secondary); }
-.log-msg.highlight { color:var(--green); }
+.log-msg.traded { color:var(--green); }
+.log-msg.blocked { color:var(--text-muted); opacity:0.6; }
 .chart-wrap { position:relative; width:100%; height:200px; }
-.two-col { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-.empty-state { text-align:center; color:var(--text-muted); padding:40px; font-size:12px; }
-.refresh-btn { background:none; border:1px solid var(--border); color:var(--text-muted); padding:4px 10px; border-radius:4px; font-size:11px; font-family:inherit; cursor:pointer; display:flex; align-items:center; gap:5px; transition:all 0.15s; }
+.two-col { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.empty-state { text-align:center; color:var(--text-muted); padding:30px; font-size:11px; }
+.refresh-btn { background:none; border:1px solid var(--border); color:var(--text-muted); padding:4px 9px; border-radius:4px; font-size:10px; font-family:inherit; cursor:pointer; display:flex; align-items:center; gap:4px; transition:all 0.15s; }
 .refresh-btn:hover { border-color:var(--border-bright); color:var(--text-secondary); }
-@media(max-width:700px){.ctrls-row{grid-template-columns:1fr}.two-col{grid-template-columns:1fr}.stats-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:700px){.ctrls-row{grid-template-columns:1fr}.two-col{grid-template-columns:1fr}.stats-grid{grid-template-columns:1fr 1fr}.sym-grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <div class="header">
-  <div class="logo"><div class="logo-dot"></div>ALPHABOT</div>
+  <div class="logo"><div class="logo-dot"></div>ALPHABOT <span style="font-size:10px;color:var(--text-muted);font-weight:400;margin-left:4px">v5</span></div>
   <div class="header-right">
+    <div class="api-badge healthy" id="api-badge" onclick="switchTabDirect('risk')" title="Claude API status — click for details">
+      <i class="ti ti-brain"></i><span id="api-status-text">CLAUDE OK</span>
+    </div>
     <div class="status-badge"><div class="status-dot"></div><span id="market-status">CHECKING...</span></div>
-    <span id="last-update" style="color:var(--text-muted)">—</span>
+    <span id="last-update" style="color:var(--text-muted);font-size:10px">—</span>
   </div>
 </div>
 <div class="tabs">
-  <div class="tab active" onclick="switchTab('overview')"><i class="ti ti-chart-line"></i> Overview</div>
-  <div class="tab" onclick="switchTab('signals')"><i class="ti ti-radar"></i> Signals</div>
-  <div class="tab" onclick="switchTab('controls')"><i class="ti ti-adjustments"></i> Controls</div>
-  <div class="tab" onclick="switchTab('performance')"><i class="ti ti-trending-up"></i> Performance</div>
-  <div class="tab" onclick="switchTab('meta')"><i class="ti ti-brain"></i> Meta Brain</div>
-  <div class="tab" onclick="switchTab('logs')"><i class="ti ti-terminal"></i> Logs</div>
+  <div class="tab active" onclick="switchTab(event,'overview')"><i class="ti ti-chart-line"></i> Overview</div>
+  <div class="tab" onclick="switchTab(event,'symbols')"><i class="ti ti-antenna"></i> Symbols</div>
+  <div class="tab" onclick="switchTab(event,'signals')"><i class="ti ti-radar"></i> Signals</div>
+  <div class="tab" onclick="switchTab(event,'risk')"><i class="ti ti-shield-lock"></i> Risk</div>
+  <div class="tab" onclick="switchTab(event,'controls')"><i class="ti ti-adjustments"></i> Controls</div>
+  <div class="tab" onclick="switchTab(event,'performance')"><i class="ti ti-trending-up"></i> Performance</div>
+  <div class="tab" onclick="switchTab(event,'meta')"><i class="ti ti-brain"></i> Meta Brain</div>
+  <div class="tab" onclick="switchTab(event,'logs')"><i class="ti ti-terminal"></i> Logs</div>
 </div>
 
 <!-- OVERVIEW -->
 <div id="tab-overview" class="content active">
   <div class="stats-grid">
-    <div class="stat-card"><div class="stat-label">Today P&L</div><div class="stat-value" id="today-pnl">$0.00</div><div class="stat-sub">10x simulated leverage</div></div>
-    <div class="stat-card"><div class="stat-label">Win Rate</div><div class="stat-value cyan" id="today-wr">—%</div><div class="stat-sub" id="today-trades">0 trades today</div></div>
+    <div class="stat-card"><div class="stat-label">Today P&L</div><div class="stat-value" id="today-pnl">$0.00</div><div class="stat-sub" id="leverage-sub">10x leverage</div></div>
+    <div class="stat-card"><div class="stat-label">Win Rate</div><div class="stat-value cyan" id="today-wr">—%</div><div class="stat-sub" id="today-trades">0 trades</div></div>
     <div class="stat-card"><div class="stat-label">Open Positions</div><div class="stat-value" id="open-count">0</div><div class="stat-sub">of 7 max</div></div>
     <div class="stat-card"><div class="stat-label">7-Day P&L</div><div class="stat-value" id="week-pnl">$0.00</div><div class="stat-sub" id="week-wr">—% win rate</div></div>
+    <div class="stat-card"><div class="stat-label">Claude API</div><div class="stat-value green" id="api-stat-val">OK</div><div class="stat-sub" id="api-stat-sub">checking...</div></div>
+    <div class="stat-card"><div class="stat-label">Limit Remaining</div><div class="stat-value green" id="limit-left">$600</div><div class="stat-sub">before kill switch</div></div>
   </div>
   <div class="panel">
-    <div class="panel-header"><div class="panel-title"><i class="ti ti-activity"></i> Open Positions</div><button class="refresh-btn" onclick="loadOverview()"><i class="ti ti-refresh"></i> Refresh</button></div>
-    <div class="panel-body" style="padding:0"><table class="data-table"><thead><tr><th>Symbol</th><th>Side</th><th>Entry</th><th>Stop</th><th>Target</th><th>P&L</th><th>Score</th></tr></thead><tbody id="open-trades-body"><tr><td colspan="7" class="empty-state">No open positions</td></tr></tbody></table></div>
+    <div class="panel-header">
+      <div class="panel-title"><i class="ti ti-activity"></i> Open Positions</div>
+      <button class="refresh-btn" onclick="loadOverview()"><i class="ti ti-refresh"></i> Refresh</button>
+    </div>
+    <div class="panel-body" style="padding:0">
+      <table class="data-table">
+        <thead><tr><th>Symbol</th><th>Side</th><th>Entry</th><th>Stop</th><th>Target</th><th>P&L</th><th>Score</th><th>Held</th></tr></thead>
+        <tbody id="open-trades-body"><tr><td colspan="8" class="empty-state">No open positions</td></tr></tbody>
+      </table>
+    </div>
   </div>
+  <div class="two-col">
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title"><i class="ti ti-history"></i> Recent Closed Trades</div></div>
+      <div class="panel-body" style="padding:0">
+        <table class="data-table">
+          <thead><tr><th>Symbol</th><th>Side</th><th>P&L</th><th>Exit</th><th>Score</th><th>Time</th></tr></thead>
+          <tbody id="recent-trades-body"><tr><td colspan="6" class="empty-state">No closed trades yet</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title"><i class="ti ti-chart-pie"></i> Today's Breakdown</div></div>
+      <div class="panel-body"><div class="chart-wrap" style="height:170px"><canvas id="today-chart"></canvas></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- SYMBOLS -->
+<div id="tab-symbols" class="content">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+    <span style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-muted)">Live per-symbol indicator state — updates every 30s</span>
+    <button class="refresh-btn" onclick="loadSymbols()"><i class="ti ti-refresh"></i> Refresh</button>
+  </div>
+  <div id="sym-cards-container" class="sym-grid"><div class="empty-state">Loading...</div></div>
   <div class="panel">
-    <div class="panel-header"><div class="panel-title"><i class="ti ti-history"></i> Recent Closed Trades</div></div>
-    <div class="panel-body" style="padding:0"><table class="data-table"><thead><tr><th>Symbol</th><th>Side</th><th>P&L</th><th>Exit Reason</th><th>Score</th><th>Closed At</th></tr></thead><tbody id="recent-trades-body"><tr><td colspan="6" class="empty-state">No closed trades yet</td></tr></tbody></table></div>
+    <div class="panel-header"><div class="panel-title"><i class="ti ti-clock-bolt"></i> Signal State Per Symbol</div></div>
+    <div class="panel-body" style="padding:0">
+      <table class="data-table">
+        <thead><tr><th>Symbol</th><th>Last Dir</th><th>ADX</th><th>Base Score</th><th>Mom Score</th><th>VWAP Side</th><th>MACD</th><th>RSI50</th><th>EMA</th><th>Last Signal</th></tr></thead>
+        <tbody id="sym-table-body"><tr><td colspan="10" class="empty-state">Loading...</td></tr></tbody>
+      </table>
+    </div>
   </div>
 </div>
 
 <!-- SIGNALS -->
 <div id="tab-signals" class="content">
+  <div class="stats-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:12px">
+    <div class="stat-card"><div class="stat-label">Total Signals</div><div class="stat-value cyan" id="sig-total">—</div><div class="stat-sub">today</div></div>
+    <div class="stat-card"><div class="stat-label">ADX Blocked</div><div class="stat-value amber" id="sig-adx-blocked">—</div><div class="stat-sub">ranging market</div></div>
+    <div class="stat-card"><div class="stat-label">Claude → None</div><div class="stat-value" id="sig-claude-blocked">—</div><div class="stat-sub">no conviction</div></div>
+    <div class="stat-card"><div class="stat-label">Entries Taken</div><div class="stat-value green" id="sig-traded">—</div><div class="stat-sub">trades opened</div></div>
+  </div>
   <div class="panel">
-    <div class="panel-header"><div class="panel-title"><i class="ti ti-radar"></i> Signal Log — Last 100</div><button class="refresh-btn" onclick="loadSignals()"><i class="ti ti-refresh"></i> Refresh</button></div>
-    <div class="panel-body" style="padding:0"><table class="data-table"><thead><tr><th>Time</th><th>Symbol</th><th>Dir</th><th>Base</th><th>Mom</th><th>EMA</th><th>VWAP</th><th>VOL</th><th>RSI</th><th>DEV</th><th>ROC</th><th>MACD</th><th>CC</th><th>MTF</th><th>Traded</th></tr></thead><tbody id="signals-body"><tr><td colspan="15" class="empty-state">No signals yet</td></tr></tbody></table></div>
+    <div class="panel-header">
+      <div class="panel-title"><i class="ti ti-radar"></i> Signal Log — Last 100</div>
+      <button class="refresh-btn" onclick="loadSignals()"><i class="ti ti-refresh"></i> Refresh</button>
+    </div>
+    <div class="panel-body" style="padding:0">
+      <table class="data-table">
+        <thead><tr><th>Time</th><th>Symbol</th><th>Claude</th><th>Base /4</th><th>Mom /2</th><th>ADX</th><th>EMA</th><th>VWAP</th><th>VOL</th><th>DEV</th><th>MACD</th><th>RSI50</th><th>MTF</th><th>Status</th></tr></thead>
+        <tbody id="signals-body"><tr><td colspan="14" class="empty-state">No signals yet</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- RISK -->
+<div id="tab-risk" class="content">
+  <div class="risk-grid" id="risk-cards">
+    <div class="risk-card good">
+      <div class="stat-label">Daily P&L</div>
+      <div class="stat-value green" id="risk-pnl">$0.00</div>
+      <div class="progress-bar"><div class="progress-fill" id="risk-pnl-bar" style="width:0%;background:var(--green)"></div></div>
+      <div class="stat-sub" style="margin-top:5px" id="risk-pnl-sub">$0 of $600 used</div>
+    </div>
+    <div class="risk-card">
+      <div class="stat-label">Open Exposure</div>
+      <div class="stat-value" id="risk-exposure">$0</div>
+      <div class="progress-bar"><div class="progress-fill" id="risk-exposure-bar" style="width:0%;background:var(--blue-glow)"></div></div>
+      <div class="stat-sub" style="margin-top:5px">vs $20k max (10x lever)</div>
+    </div>
+    <div class="risk-card">
+      <div class="stat-label">Claude API</div>
+      <div class="stat-value green" id="risk-api-status">HEALTHY</div>
+      <div class="stat-sub" style="margin-top:5px" id="risk-api-detail">checking...</div>
+    </div>
+    <div class="risk-card good">
+      <div class="stat-label">Bot Status</div>
+      <div class="stat-value green" id="risk-kill">ACTIVE</div>
+      <div class="stat-sub" style="margin-top:5px" id="risk-kill-sub">running normally</div>
+    </div>
+  </div>
+  <div class="two-col">
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title"><i class="ti ti-brain"></i> Claude API Health</div><button class="refresh-btn" onclick="loadRisk()"><i class="ti ti-refresh"></i></button></div>
+      <div class="panel-body">
+        <div class="cooldown-item"><span style="color:var(--text-muted)">Status</span><span id="api-health-status">—</span></div>
+        <div class="cooldown-item"><span style="color:var(--text-muted)">Mode</span><span id="api-health-mode">—</span></div>
+        <div class="cooldown-item"><span style="color:var(--text-muted)">Consecutive failures</span><span id="api-health-fails" style="color:var(--cyan);font-weight:600">—</span></div>
+        <div class="cooldown-item"><span style="color:var(--text-muted)">Total calls</span><span id="api-health-total">—</span></div>
+        <div class="cooldown-item"><span style="color:var(--text-muted)">Failure rate</span><span id="api-health-rate">—</span></div>
+        <div class="cooldown-item"><span style="color:var(--text-muted)">Last success</span><span id="api-health-last">—</span></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title"><i class="ti ti-clock-pause"></i> Open Position Details</div></div>
+      <div class="panel-body" id="cooldown-list"><div class="empty-state">No open positions</div></div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-header"><div class="panel-title"><i class="ti ti-list-details"></i> Full Position Risk Table</div></div>
+    <div class="panel-body" style="padding:0">
+      <table class="data-table">
+        <thead><tr><th>Symbol</th><th>Side</th><th>Entry</th><th>Stop</th><th>Target</th><th>ATR</th><th>Stop $</th><th>TP $</th><th>R:R</th><th>Held</th></tr></thead>
+        <tbody id="risk-trades-body"><tr><td colspan="10" class="empty-state">No open positions</td></tr></tbody>
+      </table>
+    </div>
   </div>
 </div>
 
 <!-- CONTROLS -->
 <div id="tab-controls" class="content">
-  <div style="margin-bottom:16px;color:var(--text-muted);font-size:11px">Changes save to the database and take effect on the bot's next scan cycle (~5 seconds). Meta brain has access to all settings.</div>
+  <div style="margin-bottom:12px;color:var(--text-muted);font-size:10px;display:flex;align-items:center;gap:7px">
+    <i class="ti ti-info-circle"></i> Changes save to DB and take effect on next scan (~5s). Meta brain reads all settings.
+  </div>
 
-  <!-- Row 1: Base Strategy + Risk -->
+  <div class="section-label"><i class="ti ti-filter"></i> Entry Gates</div>
   <div class="ctrls-row">
     <div class="ctrl-group">
-      <h3><i class="ti ti-chart-bar"></i> Base Signals <span class="badge-group">need 4 of 5</span></h3>
+      <h3><i class="ti ti-wave-sine"></i> ADX Regime Filter <span class="badge badge-new">new</span></h3>
       <div class="ctrl-row">
-        <div><div class="ctrl-label">Prime time score (9:30–11am)</div><div class="ctrl-hint">Lower bar during peak momentum hours</div></div>
-        <input type="range" min="2" max="5" step="1" id="ctrl-PRIME_BASE_MIN" oninput="updateVal(this)">
-        <div class="ctrl-val" id="val-PRIME_BASE_MIN">3</div>
-      </div>
-      <div class="ctrl-row">
-        <div><div class="ctrl-label">Regular session score</div><div class="ctrl-hint">Higher bar during choppy midday/afternoon</div></div>
-        <input type="range" min="2" max="5" step="1" id="ctrl-REGULAR_BASE_MIN" oninput="updateVal(this)">
-        <div class="ctrl-val" id="val-REGULAR_BASE_MIN">4</div>
-      </div>
-      <div class="ctrl-row">
-        <div><div class="ctrl-label">Prime time ends</div><div class="ctrl-hint">Hour (ET) when prime score switches to regular</div></div>
-        <input type="range" min="10" max="13" step="1" id="ctrl-PRIME_END_HOUR" oninput="updateVal(this)">
-        <div class="ctrl-val" id="val-PRIME_END_HOUR">11</div>
-      </div>
-      <div class="divider"></div>
-      <div class="ctrl-row">
-        <div><div class="ctrl-label">EMA fast period</div><div class="ctrl-hint">Short EMA — crosses above slow to confirm direction</div></div>
-        <input type="range" min="5" max="15" step="1" id="ctrl-EMA_FAST" oninput="updateVal(this)">
-        <div class="ctrl-val" id="val-EMA_FAST">9</div>
-      </div>
-      <div class="ctrl-row">
-        <div><div class="ctrl-label">EMA slow period</div><div class="ctrl-hint">Long EMA — baseline trend filter</div></div>
-        <input type="range" min="15" max="50" step="1" id="ctrl-EMA_SLOW" oninput="updateVal(this)">
-        <div class="ctrl-val" id="val-EMA_SLOW">21</div>
-      </div>
-      <div class="divider"></div>
-      <div class="ctrl-row">
-        <div><div class="ctrl-label">VWAP deviation mult</div><div class="ctrl-hint">Std devs from VWAP needed for breakout signal</div></div>
-        <input type="range" min="0.5" max="3.0" step="0.1" id="ctrl-VWAP_DEV_MULT" oninput="updateVal(this)">
-        <div class="ctrl-val" id="val-VWAP_DEV_MULT">1.5</div>
-      </div>
-      <div class="ctrl-row">
-        <div><div class="ctrl-label">Vol acceleration mult</div><div class="ctrl-hint">Projected candle volume must be X× avg</div></div>
-        <input type="range" min="1.0" max="4.0" step="0.1" id="ctrl-VOL_ACCEL_MULT" oninput="updateVal(this)">
-        <div class="ctrl-val" id="val-VOL_ACCEL_MULT">1.8</div>
-      </div>
-      <div class="ctrl-row">
-        <div><div class="ctrl-label">RSI overbought</div></div>
-        <input type="range" min="60" max="85" step="1" id="ctrl-RSI_OVERBOUGHT" oninput="updateVal(this)">
-        <div class="ctrl-val" id="val-RSI_OVERBOUGHT">70</div>
-      </div>
-      <div class="ctrl-row">
-        <div><div class="ctrl-label">RSI oversold</div></div>
-        <input type="range" min="15" max="40" step="1" id="ctrl-RSI_OVERSOLD" oninput="updateVal(this)">
-        <div class="ctrl-val" id="val-RSI_OVERSOLD">30</div>
+        <div>
+          <div class="ctrl-label">ADX minimum threshold</div>
+          <div class="ctrl-hint">ADX below this = ranging market, ALL entries blocked regardless of other signals. 20 = standard. 25 = stricter.</div>
+        </div>
+        <input type="range" min="10" max="35" step="1" id="ctrl-ADX_MIN_THRESHOLD" oninput="updateVal(this)">
+        <div class="ctrl-val" id="val-ADX_MIN_THRESHOLD">20</div>
       </div>
     </div>
     <div class="ctrl-group">
-      <h3><i class="ti ti-shield"></i> Risk</h3>
+      <h3><i class="ti ti-brain"></i> Claude Direction API</h3>
       <div class="ctrl-row">
-        <div class="ctrl-label">Simulated leverage</div>
-        <input type="range" min="1" max="20" step="1" id="ctrl-SIMULATED_LEVERAGE" oninput="updateVal(this,'x')">
-        <div class="ctrl-val" id="val-SIMULATED_LEVERAGE">10x</div>
+        <div><div class="ctrl-label">API status</div><div class="ctrl-hint">Haiku decides long/short/none. Rule-based fallback auto-activates on failure.</div></div>
+        <span class="badge badge-healthy" id="ctrl-api-status-badge">HEALTHY</span>
       </div>
       <div class="ctrl-row">
-        <div class="ctrl-label">Max daily loss %</div>
-        <input type="range" min="5" max="50" step="1" id="ctrl-MAX_DAILY_LOSS_PCT_pct" oninput="updateValPct(this,'MAX_DAILY_LOSS_PCT')">
-        <div class="ctrl-val" id="val-MAX_DAILY_LOSS_PCT">30%</div>
-      </div>
-      <div class="ctrl-row">
-        <div class="ctrl-label">Max open trades</div>
-        <input type="range" min="1" max="10" step="1" id="ctrl-MAX_OPEN_TRADES" oninput="updateVal(this)">
-        <div class="ctrl-val" id="val-MAX_OPEN_TRADES">7</div>
-      </div>
-      <div class="ctrl-row">
-        <div class="ctrl-label">Max position size %</div>
-        <input type="range" min="5" max="50" step="1" id="ctrl-MAX_POSITION_PCT_pct" oninput="updateValPct(this,'MAX_POSITION_PCT')">
-        <div class="ctrl-val" id="val-MAX_POSITION_PCT">20%</div>
-      </div>
-      <div class="ctrl-row">
-        <div class="ctrl-label">ATR stop multiplier</div>
-        <input type="range" min="0.5" max="3.0" step="0.1" id="ctrl-ATR_STOP_MULT" oninput="updateVal(this)">
-        <div class="ctrl-val" id="val-ATR_STOP_MULT">2.0</div>
-      </div>
-      <div class="ctrl-row">
-        <div class="ctrl-label">ATR TP multiplier</div>
-        <input type="range" min="1.0" max="6.0" step="0.1" id="ctrl-ATR_TP_MULT" oninput="updateVal(this)">
-        <div class="ctrl-val" id="val-ATR_TP_MULT">4.0</div>
-      </div>
-      <div class="ctrl-row">
-        <div class="ctrl-label">Breakeven ATR mult</div>
-        <input type="range" min="0.25" max="2.0" step="0.05" id="ctrl-BREAKEVEN_ATR_MULT" oninput="updateVal(this)">
-        <div class="ctrl-val" id="val-BREAKEVEN_ATR_MULT">0.75</div>
-      </div>
-      <div class="ctrl-row">
-        <div><div class="ctrl-label">Trailing stop distance</div><div class="ctrl-hint">ATR multiples from price after breakeven triggers</div></div>
-        <input type="range" min="0.25" max="2.0" step="0.25" id="ctrl-TRAIL_STEP" oninput="updateVal(this)">
-        <div class="ctrl-val" id="val-TRAIL_STEP">0.5</div>
-      </div>
-      <div class="divider"></div>
-      <div class="ctrl-row">
-        <div><div class="ctrl-label">Min R:R ratio</div><div class="ctrl-hint">Minimum reward:risk needed to enter a trade</div></div>
-        <input type="range" min="0.8" max="2.0" step="0.1" id="ctrl-MIN_RR" oninput="updateVal(this)">
-        <div class="ctrl-val" id="val-MIN_RR">1.0</div>
-      </div>
-      <div class="divider"></div>
-      <div class="ctrl-row">
-        <div><div class="ctrl-label">Loss direction cooldown</div><div class="ctrl-hint">After a stop loss, block same direction for X mins</div></div>
-        <input type="range" min="5" max="60" step="5" id="ctrl-LOSS_COOLDOWN_MINS" oninput="updateVal(this,'m')">
-        <div class="ctrl-val" id="val-LOSS_COOLDOWN_MINS">20m</div>
+        <div><div class="ctrl-label">Consecutive failures</div><div class="ctrl-hint">≥3 = fallback mode active</div></div>
+        <span id="ctrl-api-fails" style="color:var(--cyan);font-weight:600;font-size:12px">0</span>
       </div>
     </div>
   </div>
 
-  <!-- Row 2: Momentum Gate + MTF -->
+  <div class="section-label"><i class="ti ti-chart-bar"></i> Base Signals <span style="color:var(--blue-glow);font-size:9px;margin-left:4px">need 3 of 4</span></div>
   <div class="ctrls-row">
     <div class="ctrl-group">
-      <h3><i class="ti ti-rocket"></i> Momentum Gate <span class="badge-group">need 2 of 3</span></h3>
+      <h3><i class="ti ti-clock"></i> Session Thresholds</h3>
       <div class="ctrl-row">
-        <div><div class="ctrl-label">Enable momentum gate</div><div class="ctrl-hint">Require ROC/MACD/CC confirmation on top of base score</div></div>
+        <div><div class="ctrl-label">Prime time min score (9:30–11am)</div><div class="ctrl-hint">Lower bar during peak momentum window</div></div>
+        <input type="range" min="2" max="4" step="1" id="ctrl-PRIME_BASE_MIN" oninput="updateVal(this)">
+        <div class="ctrl-val" id="val-PRIME_BASE_MIN">3</div>
+      </div>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">Regular session min score</div><div class="ctrl-hint">Higher bar during midday/afternoon chop</div></div>
+        <input type="range" min="2" max="4" step="1" id="ctrl-REGULAR_BASE_MIN" oninput="updateVal(this)">
+        <div class="ctrl-val" id="val-REGULAR_BASE_MIN">3</div>
+      </div>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">Prime time ends (ET hour)</div></div>
+        <input type="range" min="10" max="13" step="1" id="ctrl-PRIME_END_HOUR" oninput="updateVal(this)">
+        <div class="ctrl-val" id="val-PRIME_END_HOUR">11</div>
+      </div>
+    </div>
+    <div class="ctrl-group">
+      <h3><i class="ti ti-chart-dots"></i> Signal Parameters</h3>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">EMA fast period</div></div>
+        <input type="range" min="5" max="15" step="1" id="ctrl-EMA_FAST" oninput="updateVal(this)">
+        <div class="ctrl-val" id="val-EMA_FAST">9</div>
+      </div>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">EMA slow period</div></div>
+        <input type="range" min="15" max="50" step="1" id="ctrl-EMA_SLOW" oninput="updateVal(this)">
+        <div class="ctrl-val" id="val-EMA_SLOW">21</div>
+      </div>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">VWAP deviation mult</div><div class="ctrl-hint">Std devs from VWAP for signal confirmation</div></div>
+        <input type="range" min="0.3" max="2.5" step="0.1" id="ctrl-VWAP_DEV_MULT" oninput="updateVal(this)">
+        <div class="ctrl-val" id="val-VWAP_DEV_MULT">1.0</div>
+      </div>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">Volume acceleration mult</div><div class="ctrl-hint">Current candle volume vs 20-bar average</div></div>
+        <input type="range" min="1.0" max="4.0" step="0.1" id="ctrl-VOL_ACCEL_MULT" oninput="updateVal(this)">
+        <div class="ctrl-val" id="val-VOL_ACCEL_MULT">1.5</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-label"><i class="ti ti-rocket"></i> Momentum Gate <span style="color:var(--blue-glow);font-size:9px;margin-left:4px">need 1 of 2 (MACD + RSI50)</span></div>
+  <div class="ctrls-row">
+    <div class="ctrl-group">
+      <h3><i class="ti ti-rocket"></i> MACD Settings <span class="badge badge-group">5-min optimized</span></h3>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">Enable momentum gate</div></div>
         <label class="toggle-switch"><input type="checkbox" id="ctrl-MOMENTUM_GATE_ENABLED" onchange="toggleBool(this,'MOMENTUM_GATE_ENABLED'); dimSection('mom-controls',!this.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
       </div>
       <div id="mom-controls">
         <div class="ctrl-row">
-          <div><div class="ctrl-label">Confirmations required</div><div class="ctrl-hint">How many of ROC / MACD / Candle Consistency must hit</div></div>
-          <input type="range" min="1" max="3" step="1" id="ctrl-MOMENTUM_GATE_MIN" oninput="updateVal(this)">
-          <div class="ctrl-val" id="val-MOMENTUM_GATE_MIN">2</div>
-        </div>
-        <div class="divider"></div>
-        <div class="ctrl-row">
-          <div><div class="ctrl-label">ROC period (candles)</div><div class="ctrl-hint">How many candles back to measure price acceleration</div></div>
-          <input type="range" min="2" max="8" step="1" id="ctrl-ROC_PERIOD" oninput="updateVal(this)">
-          <div class="ctrl-val" id="val-ROC_PERIOD">3</div>
+          <div><div class="ctrl-label">MACD fast period</div><div class="ctrl-hint">5 for 5-min bars (was 12 for 1-min)</div></div>
+          <input type="range" min="3" max="15" step="1" id="ctrl-MACD_FAST" oninput="updateVal(this)">
+          <div class="ctrl-val" id="val-MACD_FAST">5</div>
         </div>
         <div class="ctrl-row">
-          <div><div class="ctrl-label">ROC min long %</div><div class="ctrl-hint">Price must rise X% over 3 candles</div></div>
-          <input type="range" min="0.02" max="0.30" step="0.01" id="ctrl-ROC_MIN_LONG" oninput="updateVal(this)">
-          <div class="ctrl-val" id="val-ROC_MIN_LONG">0.08</div>
-        </div>
-        <div class="ctrl-row">
-          <div><div class="ctrl-label">ROC min short %</div></div>
-          <input type="range" min="-0.30" max="-0.02" step="0.01" id="ctrl-ROC_MIN_SHORT" oninput="updateVal(this)">
-          <div class="ctrl-val" id="val-ROC_MIN_SHORT">-0.08</div>
-        </div>
-        <div class="divider"></div>
-        <div class="ctrl-row">
-          <div><div class="ctrl-label">MACD fast period</div></div>
-          <input type="range" min="5" max="20" step="1" id="ctrl-MACD_FAST" oninput="updateVal(this)">
-          <div class="ctrl-val" id="val-MACD_FAST">12</div>
-        </div>
-        <div class="ctrl-row">
-          <div><div class="ctrl-label">MACD slow period</div></div>
-          <input type="range" min="15" max="50" step="1" id="ctrl-MACD_SLOW" oninput="updateVal(this)">
-          <div class="ctrl-val" id="val-MACD_SLOW">26</div>
+          <div><div class="ctrl-label">MACD slow period</div><div class="ctrl-hint">13 for 5-min bars (was 26)</div></div>
+          <input type="range" min="8" max="40" step="1" id="ctrl-MACD_SLOW" oninput="updateVal(this)">
+          <div class="ctrl-val" id="val-MACD_SLOW">13</div>
         </div>
         <div class="ctrl-row">
           <div><div class="ctrl-label">MACD signal period</div></div>
@@ -299,152 +390,209 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
         </div>
         <div class="divider"></div>
         <div class="ctrl-row">
-          <div><div class="ctrl-label">Candle consistency lookback</div><div class="ctrl-hint">How many candles to check for direction</div></div>
-          <input type="range" min="2" max="6" step="1" id="ctrl-CANDLE_CONSISTENCY_LOOKBACK" oninput="updateVal(this)">
-          <div class="ctrl-val" id="val-CANDLE_CONSISTENCY_LOOKBACK">3</div>
+          <div><div class="ctrl-label">RSI overbought</div><div class="ctrl-hint">Legacy — momentum now uses 50-line</div></div>
+          <input type="range" min="60" max="85" step="1" id="ctrl-RSI_OVERBOUGHT" oninput="updateVal(this)">
+          <div class="ctrl-val" id="val-RSI_OVERBOUGHT">70</div>
         </div>
         <div class="ctrl-row">
-          <div><div class="ctrl-label">Candle consistency min</div><div class="ctrl-hint">Candles that must agree with direction</div></div>
-          <input type="range" min="1" max="5" step="1" id="ctrl-CANDLE_CONSISTENCY_MIN" oninput="updateVal(this)">
-          <div class="ctrl-val" id="val-CANDLE_CONSISTENCY_MIN">2</div>
+          <div><div class="ctrl-label">RSI oversold</div></div>
+          <input type="range" min="15" max="40" step="1" id="ctrl-RSI_OVERSOLD" oninput="updateVal(this)">
+          <div class="ctrl-val" id="val-RSI_OVERSOLD">30</div>
         </div>
       </div>
     </div>
-    <div style="display:flex;flex-direction:column;gap:16px">
-      <!-- MTF Filter -->
+    <div style="display:flex;flex-direction:column;gap:12px">
       <div class="ctrl-group">
         <h3><i class="ti ti-layers-intersect"></i> Multi-Timeframe Filter</h3>
         <div class="ctrl-row">
-          <div><div class="ctrl-label">Enable MTF filter</div><div class="ctrl-hint">Block entries that go against the ~21-min trend</div></div>
+          <div><div class="ctrl-label">Enable MTF filter</div><div class="ctrl-hint">Block entries against ~100-min trend</div></div>
           <label class="toggle-switch"><input type="checkbox" id="ctrl-MTF_FILTER_ENABLED" onchange="toggleBool(this,'MTF_FILTER_ENABLED'); dimSection('mtf-controls',!this.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
         </div>
         <div id="mtf-controls">
           <div class="ctrl-row">
-            <div><div class="ctrl-label">MTF EMA period</div><div class="ctrl-hint">Period on 1-min candles (21 ≈ 21-min trend)</div></div>
+            <div><div class="ctrl-label">MTF EMA period</div><div class="ctrl-hint">21 on 5-min ≈ 100-min trend</div></div>
             <input type="range" min="5" max="50" step="1" id="ctrl-MTF_EMA_PERIOD" oninput="updateVal(this)">
             <div class="ctrl-val" id="val-MTF_EMA_PERIOD">21</div>
           </div>
         </div>
       </div>
-      <!-- Direction Flip -->
       <div class="ctrl-group">
-        <h3><i class="ti ti-arrows-exchange"></i> Direction Flip</h3>
+        <h3><i class="ti ti-arrows-exchange"></i> Direction Flip <span class="badge badge-group">10m cooldown</span></h3>
         <div class="ctrl-row">
-          <div><div class="ctrl-label">Enable direction flip</div><div class="ctrl-hint">Exit position when signals reverse direction</div></div>
+          <div><div class="ctrl-label">Enable flip</div></div>
           <label class="toggle-switch"><input type="checkbox" id="ctrl-FLIP_ENABLED" onchange="toggleBool(this,'FLIP_ENABLED'); dimSection('flip-controls',!this.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
         </div>
         <div id="flip-controls">
           <div class="ctrl-row">
-            <div><div class="ctrl-label">Flip confirmation signals</div><div class="ctrl-hint">Signals needed in new direction before re-entering</div></div>
-            <input type="range" min="1" max="5" step="1" id="ctrl-FLIP_MIN_SIGNALS" oninput="updateVal(this)">
-            <div class="ctrl-val" id="val-FLIP_MIN_SIGNALS">1</div>
+            <div><div class="ctrl-label">Flip cooldown (minutes)</div><div class="ctrl-hint">Prevents chop spiral — min time between flips</div></div>
+            <input type="range" min="5" max="60" step="5" id="ctrl-FLIP_COOLDOWN_SEC_min" oninput="updateFlipCooldown(this)">
+            <div class="ctrl-val" id="val-FLIP_COOLDOWN_SEC">10m</div>
           </div>
-          <div class="divider"></div>
           <div class="ctrl-row">
-            <div><div class="ctrl-label">Flip trigger score</div><div class="ctrl-hint">Min base score the new-direction signal must hit</div></div>
-            <input type="range" min="1" max="5" step="1" id="ctrl-FLIP_BASE_SCORE_MIN" oninput="updateVal(this)">
-            <div class="ctrl-val" id="val-FLIP_BASE_SCORE_MIN">3</div>
+            <div><div class="ctrl-label">Confirmation signals</div><div class="ctrl-hint">In new direction before re-entering</div></div>
+            <input type="range" min="1" max="5" step="1" id="ctrl-FLIP_MIN_SIGNALS" oninput="updateVal(this)">
+            <div class="ctrl-val" id="val-FLIP_MIN_SIGNALS">3</div>
+          </div>
+          <div class="ctrl-row">
+            <div><div class="ctrl-label">Min base score to flip</div></div>
+            <input type="range" min="1" max="4" step="1" id="ctrl-FLIP_BASE_SCORE_MIN" oninput="updateVal(this)">
+            <div class="ctrl-val" id="val-FLIP_BASE_SCORE_MIN">4</div>
           </div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Row 3: Dynamic TP + Faster Scan -->
+  <div class="section-label"><i class="ti ti-shield"></i> Risk Management</div>
   <div class="ctrls-row">
     <div class="ctrl-group">
-      <h3><i class="ti ti-target-arrow"></i> Dynamic TP Extension</h3>
+      <h3><i class="ti ti-shield"></i> Capital & Limits</h3>
       <div class="ctrl-row">
-        <div><div class="ctrl-label">Enable dynamic TP</div><div class="ctrl-hint">Extend TP when momentum still firing at first target</div></div>
+        <div><div class="ctrl-label">Simulated leverage</div></div>
+        <input type="range" min="1" max="20" step="1" id="ctrl-SIMULATED_LEVERAGE" oninput="updateVal(this,'x')">
+        <div class="ctrl-val" id="val-SIMULATED_LEVERAGE">10x</div>
+      </div>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">Max daily loss %</div></div>
+        <input type="range" min="5" max="50" step="1" id="ctrl-MAX_DAILY_LOSS_PCT_pct" oninput="updateValPct(this,'MAX_DAILY_LOSS_PCT')">
+        <div class="ctrl-val" id="val-MAX_DAILY_LOSS_PCT">30%</div>
+      </div>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">Max open trades</div></div>
+        <input type="range" min="1" max="10" step="1" id="ctrl-MAX_OPEN_TRADES" oninput="updateVal(this)">
+        <div class="ctrl-val" id="val-MAX_OPEN_TRADES">7</div>
+      </div>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">Max position size %</div></div>
+        <input type="range" min="5" max="50" step="1" id="ctrl-MAX_POSITION_PCT_pct" oninput="updateValPct(this,'MAX_POSITION_PCT')">
+        <div class="ctrl-val" id="val-MAX_POSITION_PCT">20%</div>
+      </div>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">Min R:R ratio</div></div>
+        <input type="range" min="0.8" max="3.0" step="0.1" id="ctrl-MIN_RR" oninput="updateVal(this)">
+        <div class="ctrl-val" id="val-MIN_RR">1.0</div>
+      </div>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">Loss cooldown (mins)</div><div class="ctrl-hint">Block same symbol+direction after stop-out</div></div>
+        <input type="range" min="5" max="60" step="5" id="ctrl-LOSS_COOLDOWN_MINS" oninput="updateVal(this,'m')">
+        <div class="ctrl-val" id="val-LOSS_COOLDOWN_MINS">20m</div>
+      </div>
+    </div>
+    <div class="ctrl-group">
+      <h3><i class="ti ti-target"></i> Stops & Targets</h3>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">ATR stop multiplier</div><div class="ctrl-hint">Stop = entry ± (ATR × mult)</div></div>
+        <input type="range" min="0.5" max="5.0" step="0.1" id="ctrl-ATR_STOP_MULT" oninput="updateVal(this)">
+        <div class="ctrl-val" id="val-ATR_STOP_MULT">2.0</div>
+      </div>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">ATR TP multiplier</div><div class="ctrl-hint">Target = entry ± (ATR × mult)</div></div>
+        <input type="range" min="1.0" max="8.0" step="0.1" id="ctrl-ATR_TP_MULT" oninput="updateVal(this)">
+        <div class="ctrl-val" id="val-ATR_TP_MULT">4.0</div>
+      </div>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">Breakeven ATR mult</div><div class="ctrl-hint">Move stop to entry once price up this × ATR</div></div>
+        <input type="range" min="0.25" max="3.0" step="0.05" id="ctrl-BREAKEVEN_ATR_MULT" oninput="updateVal(this)">
+        <div class="ctrl-val" id="val-BREAKEVEN_ATR_MULT">0.75</div>
+      </div>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">Trail stop distance (ATR)</div><div class="ctrl-hint">How far trailing stop follows price</div></div>
+        <input type="range" min="0.25" max="3.0" step="0.25" id="ctrl-TRAIL_STEP" oninput="updateVal(this)">
+        <div class="ctrl-val" id="val-TRAIL_STEP">0.5</div>
+      </div>
+      <div class="divider"></div>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">Enable dynamic TP</div><div class="ctrl-hint">Extend TP when momentum still firing at target</div></div>
         <label class="toggle-switch"><input type="checkbox" id="ctrl-DYNAMIC_TP_ENABLED" onchange="toggleBool(this,'DYNAMIC_TP_ENABLED'); dimSection('dtp-controls',!this.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
       </div>
       <div id="dtp-controls">
         <div class="ctrl-row">
-          <div><div class="ctrl-label">TP extension (ATR multiples)</div><div class="ctrl-hint">Extra ATR added beyond first target</div></div>
-          <input type="range" min="0.5" max="3.0" step="0.25" id="ctrl-DYNAMIC_TP_EXTENSION" oninput="updateVal(this)">
+          <div><div class="ctrl-label">TP extension (ATR mult)</div></div>
+          <input type="range" min="0.5" max="4.0" step="0.25" id="ctrl-DYNAMIC_TP_EXTENSION" oninput="updateVal(this)">
           <div class="ctrl-val" id="val-DYNAMIC_TP_EXTENSION">1.0</div>
         </div>
         <div class="ctrl-row">
-          <div><div class="ctrl-label">Min momentum to extend</div><div class="ctrl-hint">Momentum confirmations needed (out of 3)</div></div>
-          <input type="range" min="1" max="3" step="1" id="ctrl-DYNAMIC_TP_MIN_MOMENTUM" oninput="updateVal(this)">
+          <div><div class="ctrl-label">Min momentum to extend</div><div class="ctrl-hint">Out of 2 (MACD + RSI50)</div></div>
+          <input type="range" min="1" max="2" step="1" id="ctrl-DYNAMIC_TP_MIN_MOMENTUM" oninput="updateVal(this)">
           <div class="ctrl-val" id="val-DYNAMIC_TP_MIN_MOMENTUM">2</div>
         </div>
       </div>
     </div>
+  </div>
+
+  <div class="section-label"><i class="ti ti-clock"></i> Scan Speed & Session</div>
+  <div class="ctrls-row">
     <div class="ctrl-group">
-      <h3><i class="ti ti-bolt"></i> Faster Scan on Breakouts</h3>
+      <h3><i class="ti ti-bolt"></i> Fast Scan on Breakouts</h3>
       <div class="ctrl-row">
-        <div><div class="ctrl-label">Enable fast scan</div><div class="ctrl-hint">Reduce scan interval when strong signal detected</div></div>
+        <div><div class="ctrl-label">Enable fast scan</div></div>
         <label class="toggle-switch"><input type="checkbox" id="ctrl-FAST_SCAN_ENABLED" onchange="toggleBool(this,'FAST_SCAN_ENABLED'); dimSection('fast-controls',!this.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
       </div>
       <div id="fast-controls">
         <div class="ctrl-row">
-          <div><div class="ctrl-label">Score threshold to activate</div><div class="ctrl-hint">Base score (out of 5) that triggers fast scan</div></div>
-          <input type="range" min="3" max="5" step="1" id="ctrl-FAST_SCAN_SCORE" oninput="updateVal(this)">
-          <div class="ctrl-val" id="val-FAST_SCAN_SCORE">5</div>
+          <div><div class="ctrl-label">Score to activate (out of 4)</div></div>
+          <input type="range" min="3" max="4" step="1" id="ctrl-FAST_SCAN_SCORE" oninput="updateVal(this)">
+          <div class="ctrl-val" id="val-FAST_SCAN_SCORE">4</div>
         </div>
         <div class="ctrl-row">
-          <div><div class="ctrl-label">Fast scan interval (seconds)</div><div class="ctrl-hint">How often to scan during a breakout window (5 min)</div></div>
-          <input type="range" min="10" max="45" step="5" id="ctrl-FAST_SCAN_INTERVAL" oninput="updateVal(this,'s')">
+          <div><div class="ctrl-label">Fast scan interval (s)</div></div>
+          <input type="range" min="10" max="60" step="5" id="ctrl-FAST_SCAN_INTERVAL" oninput="updateVal(this,'s')">
           <div class="ctrl-val" id="val-FAST_SCAN_INTERVAL">20s</div>
         </div>
       </div>
     </div>
-  </div>
-
-  <!-- Row 4: Session Controls -->
-  <div class="ctrls-row single">
     <div class="ctrl-group">
       <h3><i class="ti ti-clock"></i> Session Controls</h3>
-
-      <!-- Morning blackout — NEW -->
       <div class="ctrl-row">
-        <div><div class="ctrl-label">Block first N minutes of open</div><div class="ctrl-hint">Skips trading during the chaotic 9:30 open window — prevents orphan trades and bad signals before MACD has data</div></div>
+        <div><div class="ctrl-label">Block first N minutes of open</div><div class="ctrl-hint">Chaotic 9:30 window — bad signals before candles form</div></div>
         <label class="toggle-switch"><input type="checkbox" id="ctrl-MORNING_BLACKOUT_ENABLED" onchange="toggleBool(this,'MORNING_BLACKOUT_ENABLED'); dimSection('morning-mins',!this.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
       </div>
-      <div id="morning-mins" class="ctrl-row" style="margin-top:8px">
-        <div class="ctrl-label" style="color:var(--text-muted)">Minutes to block after 9:30 AM open</div>
-        <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-secondary)">
-          <input type="number" class="num-input" id="ctrl-MORNING_BLACKOUT_MINS" min="5" max="30" value="10" oninput="configState['MORNING_BLACKOUT_MINS']=parseInt(this.value)">
-          <span>min</span>
+      <div id="morning-mins" class="ctrl-row">
+        <div class="ctrl-label" style="color:var(--text-muted)">Minutes to block</div>
+        <div style="display:flex;align-items:center;gap:5px;font-size:11px">
+          <input type="number" class="num-input" id="ctrl-MORNING_BLACKOUT_MINS" min="5" max="45" value="15" oninput="configState['MORNING_BLACKOUT_MINS']=parseInt(this.value)">
+          <span style="color:var(--text-muted)">min</span>
         </div>
       </div>
       <div class="divider"></div>
-
       <div class="ctrl-row">
-        <div><div class="ctrl-label">Pause new entries</div><div class="ctrl-hint">Stops the bot from opening new trades — existing positions still managed</div></div>
+        <div><div class="ctrl-label">Pause new entries</div><div class="ctrl-hint">Existing positions still managed</div></div>
         <label class="toggle-switch"><input type="checkbox" id="ctrl-TRADING_PAUSED" onchange="toggleBool(this,'TRADING_PAUSED')"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
       </div>
-      <div class="divider"></div>
       <div class="ctrl-row">
-        <div><div class="ctrl-label">Close all positions at end of day (3:55pm ET)</div></div>
+        <div><div class="ctrl-label">Close EOD at 3:55pm ET</div></div>
         <label class="toggle-switch"><input type="checkbox" id="ctrl-CLOSE_EOD" onchange="toggleBool(this,'CLOSE_EOD')"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
       </div>
-      <div class="divider"></div>
       <div class="ctrl-row">
-        <div><div class="ctrl-label">Block trading during dead zone</div><div class="ctrl-hint">Prevents entries during choppy midday hours</div></div>
+        <div><div class="ctrl-label">Midday dead zone block</div></div>
         <label class="toggle-switch"><input type="checkbox" id="ctrl-BLACKOUT_ENABLED" onchange="toggleBool(this,'BLACKOUT_ENABLED'); dimSection('blackout-time',!this.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
       </div>
-      <div id="blackout-time" class="ctrl-row" style="margin-top:8px">
-        <div class="ctrl-label" style="color:var(--text-muted)">Blackout window (ET 24h)</div>
-        <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-secondary)">
+      <div id="blackout-time" class="ctrl-row">
+        <div class="ctrl-label" style="color:var(--text-muted)">Block window (ET 24h)</div>
+        <div style="display:flex;align-items:center;gap:5px;font-size:11px">
           <input type="number" class="num-input" id="ctrl-BLACKOUT_START" min="9" max="15" value="11" oninput="configState['BLACKOUT_START']=parseInt(this.value)">
-          <span>:00 to</span>
+          <span style="color:var(--text-muted)">to</span>
           <input type="number" class="num-input" id="ctrl-BLACKOUT_END" min="9" max="16" value="13" oninput="configState['BLACKOUT_END']=parseInt(this.value)">
-          <span>:00 ET</span>
         </div>
       </div>
     </div>
   </div>
 
-  <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:4px">
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px">
     <button class="save-btn" onclick="saveConfig()">Save All Changes</button>
-    <span id="save-status" style="font-size:11px;color:var(--text-muted)"></span>
+    <button class="danger-btn" onclick="pauseTrading()">⏸ Toggle Pause</button>
+    <span id="save-status" style="font-size:10px;color:var(--text-muted)"></span>
   </div>
 </div>
 
 <!-- PERFORMANCE -->
 <div id="tab-performance" class="content">
+  <div class="stats-grid" style="grid-template-columns:repeat(4,1fr)">
+    <div class="stat-card"><div class="stat-label">30-Day P&L</div><div class="stat-value" id="perf-pnl">$0</div><div class="stat-sub">closed trades</div></div>
+    <div class="stat-card"><div class="stat-label">30-Day Win Rate</div><div class="stat-value cyan" id="perf-wr">—%</div><div class="stat-sub" id="perf-trades">0 trades</div></div>
+    <div class="stat-card"><div class="stat-label">Best Day</div><div class="stat-value green" id="perf-best">$0</div><div class="stat-sub" id="perf-best-date">—</div></div>
+    <div class="stat-card"><div class="stat-label">Worst Day</div><div class="stat-value red" id="perf-worst">$0</div><div class="stat-sub" id="perf-worst-date">—</div></div>
+  </div>
   <div class="panel">
     <div class="panel-header"><div class="panel-title"><i class="ti ti-chart-bar"></i> Daily P&L — Last 30 Days</div></div>
     <div class="panel-body"><div class="chart-wrap"><canvas id="pnl-chart"></canvas></div></div>
@@ -452,71 +600,148 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
   <div class="two-col">
     <div class="panel">
       <div class="panel-header"><div class="panel-title">By Symbol</div></div>
-      <div class="panel-body" style="padding:0"><table class="data-table"><thead><tr><th>Symbol</th><th>Trades</th><th>Win %</th><th>P&L</th></tr></thead><tbody id="symbol-body"><tr><td colspan="4" class="empty-state">No data yet</td></tr></tbody></table></div>
+      <div class="panel-body" style="padding:0">
+        <table class="data-table">
+          <thead><tr><th>Symbol</th><th>Trades</th><th>Win %</th><th>P&L</th></tr></thead>
+          <tbody id="symbol-body"><tr><td colspan="4" class="empty-state">No data</td></tr></tbody>
+        </table>
+      </div>
     </div>
     <div class="panel">
       <div class="panel-header"><div class="panel-title">Win / Loss</div></div>
       <div class="panel-body"><div class="chart-wrap" style="height:160px"><canvas id="wr-chart"></canvas></div></div>
     </div>
   </div>
+  <div class="panel">
+    <div class="panel-header"><div class="panel-title"><i class="ti ti-door-exit"></i> By Exit Reason</div></div>
+    <div class="panel-body" style="padding:0">
+      <table class="data-table">
+        <thead><tr><th>Exit Reason</th><th>Count</th><th>Total P&L</th><th>Avg P&L</th></tr></thead>
+        <tbody id="exit-body"><tr><td colspan="4" class="empty-state">No data</td></tr></tbody>
+      </table>
+    </div>
+  </div>
 </div>
 
 <!-- META BRAIN -->
 <div id="tab-meta" class="content">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
     <span style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-muted)">Daily AI analysis — auto-runs at 5pm ET</span>
-    <button class="refresh-btn" onclick="runMeta()" id="meta-run-btn"><i class="ti ti-brain"></i> Run Now</button>
+    <div style="display:flex;gap:8px">
+      <button class="refresh-btn" onclick="loadMeta()"><i class="ti ti-refresh"></i> Refresh</button>
+      <button class="refresh-btn" onclick="runMeta()" id="meta-run-btn" style="border-color:var(--blue-glow);color:var(--blue-glow)"><i class="ti ti-brain"></i> Run Now</button>
+    </div>
   </div>
   <div id="meta-reviews-container"><div class="empty-state">No reviews yet.</div></div>
 </div>
 
 <!-- LOGS -->
 <div id="tab-logs" class="content">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-    <span style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-muted)">Signal Feed — auto-refreshes every 60s</span>
-    <button class="refresh-btn" onclick="loadLogs()"><i class="ti ti-refresh"></i> Refresh Now</button>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+    <div style="display:flex;gap:12px;align-items:center">
+      <span style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-muted)">Signal Feed</span>
+      <label style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text-muted);cursor:pointer">
+        <input type="checkbox" id="log-show-blocked" style="width:12px;height:12px" checked> Show ADX-blocked
+      </label>
+      <label style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text-muted);cursor:pointer">
+        <input type="checkbox" id="log-show-none" style="width:12px;height:12px"> Show claude=none
+      </label>
+    </div>
+    <button class="refresh-btn" onclick="loadLogs()"><i class="ti ti-refresh"></i> Refresh</button>
   </div>
   <div class="log-container" id="log-container"><div style="color:var(--text-muted)">Loading...</div></div>
 </div>
 
 <script>
-let pnlChart=null, wrChart=null;
+let pnlChart=null,wrChart=null,todayChart=null;
 const configState={};
 
-function switchTab(name){
+function switchTab(e,name){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.content').forEach(c=>c.classList.remove('active'));
-  event.target.closest('.tab').classList.add('active');
+  e.currentTarget.classList.add('active');
   document.getElementById('tab-'+name).classList.add('active');
   if(name==='overview')    loadOverview();
+  if(name==='symbols')     loadSymbols();
   if(name==='signals')     loadSignals();
+  if(name==='risk')        loadRisk();
   if(name==='controls')    loadConfig();
   if(name==='performance') loadPerformance();
   if(name==='meta')        loadMeta();
   if(name==='logs')        loadLogs();
 }
+function switchTabDirect(name){
+  document.querySelectorAll('.tab').forEach(t=>{ if(t.textContent.toLowerCase().includes(name)) t.classList.add('active'); else t.classList.remove('active'); });
+  document.querySelectorAll('.content').forEach(c=>c.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  loadRisk();
+}
 
-function fmt(n){
+function fmt(n,sign=true){
   if(n===null||n===undefined)return'—';
   const v=parseFloat(n);
-  return(v>=0?'+':'')+`$${Math.abs(v).toFixed(2)}`;
+  const prefix=sign?(v>=0?'+':''):(v<0?'-':'');
+  return prefix+'$'+Math.abs(v).toFixed(2);
 }
 function fmtTime(iso){
   if(!iso)return'—';
   return new Date(iso).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false});
 }
+function fmtHeld(iso){
+  if(!iso)return'—';
+  const s=Math.floor((Date.now()-new Date(iso))/1000);
+  if(s<60)return s+'s'; if(s<3600)return Math.floor(s/60)+'m';
+  return Math.floor(s/3600)+'h '+Math.floor((s%3600)/60)+'m';
+}
 function scorePips(score,max){
-  max=max||5;
   let h='<div class="score-bar">';
   for(let i=0;i<max;i++) h+=`<div class="score-pip${i<score?' filled':''}"></div>`;
   return h+'</div>';
+}
+function dot(v){
+  if(v===null||v===undefined)return'<span style="color:var(--text-muted);font-size:9px">—</span>';
+  return`<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${v?'var(--green)':'var(--red)'}"></span>`;
+}
+function adxColor(v){
+  if(!v||v<15)return'var(--red)'; if(v<20)return'var(--amber)';
+  if(v<30)return'var(--cyan)'; return'var(--green)';
 }
 function marketStatus(){
   const et=new Date(new Date().toLocaleString('en-US',{timeZone:'America/New_York'}));
   const h=et.getHours(),m=et.getMinutes(),day=et.getDay();
   const open=(h>9||(h===9&&m>=30))&&h<16;
-  document.getElementById('market-status').textContent=(day===0||day===6)?'WEEKEND':open?'MARKET OPEN':'MARKET CLOSED';
-  document.getElementById('last-update').textContent='Updated '+new Date().toLocaleTimeString();
+  document.getElementById('market-status').textContent=(day===0||day===6)?'WEEKEND':open?'OPEN':'CLOSED';
+  document.getElementById('last-update').textContent=new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false});
+}
+
+async function loadAPIHealth(){
+  try{
+    const d=await fetch('/api/health').then(r=>r.json());
+    if(d.error)return;
+    const api=d.claude_api;
+    const badge=document.getElementById('api-badge');
+    const text=document.getElementById('api-status-text');
+    badge.className='api-badge '+(api.using_fallback?'fallback':api.status);
+    text.textContent=api.using_fallback?'FALLBACK':api.status==='healthy'?'CLAUDE OK':'DEGRADED';
+    const sv=document.getElementById('api-stat-val');
+    const ss=document.getElementById('api-stat-sub');
+    sv.textContent=api.using_fallback?'FALLBACK':api.status.toUpperCase();
+    sv.style.color=api.using_fallback?'var(--purple)':api.status==='healthy'?'var(--green)':'var(--amber)';
+    ss.textContent=`${api.consecutive_fails} fails | ${api.failure_rate_pct}%`;
+    const cb=document.getElementById('ctrl-api-status-badge');
+    const cf=document.getElementById('ctrl-api-fails');
+    if(cb){cb.className='badge badge-'+(api.using_fallback?'fallback':api.status==='healthy'?'healthy':'degraded');cb.textContent=api.using_fallback?'FALLBACK':api.status.toUpperCase();}
+    if(cf)cf.textContent=api.consecutive_fails;
+    document.getElementById('api-health-status').textContent=api.status;
+    document.getElementById('api-health-fails').textContent=api.consecutive_fails;
+    document.getElementById('api-health-total').textContent=api.total_calls||'—';
+    document.getElementById('api-health-rate').textContent=(api.failure_rate_pct||0)+'%';
+    document.getElementById('api-health-mode').innerHTML=api.using_fallback?'<span class="badge badge-fallback">RULE-BASED</span>':'<span class="badge badge-healthy">CLAUDE HAIKU</span>';
+    document.getElementById('api-health-last').textContent=api.last_success?fmtTime(api.last_success):'Never';
+    document.getElementById('risk-api-status').textContent=api.status.toUpperCase();
+    document.getElementById('risk-api-status').style.color=api.using_fallback?'var(--purple)':api.status==='healthy'?'var(--green)':'var(--amber)';
+    document.getElementById('risk-api-detail').textContent=`${api.consecutive_fails} fails | ${api.failure_rate_pct}% rate`;
+  }catch(e){}
 }
 
 async function loadOverview(){
@@ -527,31 +752,117 @@ async function loadOverview(){
     const el=document.getElementById('today-pnl');
     el.textContent=fmt(pnl); el.className='stat-value '+(pnl>=0?'green':'red');
     document.getElementById('today-wr').textContent=d.today.win_rate+'%';
-    document.getElementById('today-trades').textContent=d.today.trades+' trades today';
+    document.getElementById('today-trades').textContent=d.today.trades+' trades';
     document.getElementById('open-count').textContent=d.today.open_count;
+    const used=Math.abs(Math.min(pnl,0));
+    const left=Math.max(600-used,0);
+    const ll=document.getElementById('limit-left');
+    ll.textContent='$'+left.toFixed(0); ll.className='stat-value '+(left<200?'red':left<400?'amber':'green');
     const wpnl=d.week.pnl;
     const wel=document.getElementById('week-pnl');
     wel.textContent=fmt(wpnl); wel.className='stat-value '+(wpnl>=0?'green':'red');
-    document.getElementById('week-wr').textContent=d.week.win_rate+'% win rate';
-    const ob=document.getElementById('open-trades-body');
-    ob.innerHTML=!d.open_trades.length?'<tr><td colspan="7" class="empty-state">No open positions</td></tr>'
+    document.getElementById('week-wr').textContent=d.week.win_rate+'% wr';
+    document.getElementById('open-trades-body').innerHTML=!d.open_trades.length?'<tr><td colspan="8" class="empty-state">No open positions</td></tr>'
       :d.open_trades.map(t=>`<tr>
-        <td style="color:var(--text-primary);font-weight:500">${t.symbol}</td>
+        <td style="font-weight:700">${t.symbol}</td>
         <td><span class="badge badge-${t.side}">${t.side.toUpperCase()}</span></td>
         <td>$${parseFloat(t.entry_price).toFixed(2)}</td>
         <td style="color:var(--red)">$${parseFloat(t.stop_loss).toFixed(2)}</td>
         <td style="color:var(--green)">$${parseFloat(t.take_profit).toFixed(2)}</td>
-        <td style="color:${(t.pnl_usd||0)>=0?'var(--green)':'var(--red)'}">${fmt(t.pnl_usd)}</td>
-        <td>${scorePips(Math.min(t.signal_score||0,5),5)} <span style="font-size:10px;color:var(--text-muted)">${t.signal_score||0}</span></td></tr>`).join('');
-    const rb=document.getElementById('recent-trades-body');
-    rb.innerHTML=!d.recent_trades.length?'<tr><td colspan="6" class="empty-state">No closed trades yet</td></tr>'
+        <td style="color:${(t.pnl_usd||0)>=0?'var(--green)':'var(--red)'}">${fmt(t.pnl_usd||0)}</td>
+        <td>${scorePips(Math.min(t.signal_score||0,4),4)}</td>
+        <td style="color:var(--text-muted)">${fmtHeld(t.entered_at)}</td></tr>`).join('');
+    document.getElementById('recent-trades-body').innerHTML=!d.recent_trades.length?'<tr><td colspan="6" class="empty-state">No closed trades</td></tr>'
       :d.recent_trades.map(t=>`<tr>
-        <td style="color:var(--text-primary);font-weight:500">${t.symbol}</td>
+        <td style="font-weight:700">${t.symbol}</td>
         <td><span class="badge badge-${t.side}">${t.side.toUpperCase()}</span></td>
-        <td style="color:${t.pnl_usd>=0?'var(--green)':'var(--red)'};font-weight:500">${fmt(t.pnl_usd)}</td>
-        <td><span class="badge ${t.exit_reason==='take_profit_extended'?'badge-open':t.status==='stopped'?'badge-stopped':'badge-closed'}">${t.exit_reason||t.status}</span></td>
-        <td>${scorePips(Math.min(t.signal_score||0,5),5)} <span style="font-size:10px;color:var(--text-muted)">${t.signal_score||0}</span></td>
+        <td style="color:${t.pnl_usd>=0?'var(--green)':'var(--red)'};font-weight:600">${fmt(t.pnl_usd)}</td>
+        <td><span class="badge ${t.exit_reason?.includes('profit')?'badge-open':t.status==='stopped'?'badge-stopped':'badge-closed'}">${t.exit_reason||t.status}</span></td>
+        <td>${scorePips(Math.min(t.signal_score||0,4),4)}</td>
         <td style="color:var(--text-muted)">${fmtTime(t.exited_at)}</td></tr>`).join('');
+    const wins=d.today.wins||0,losses=(d.today.trades||0)-wins;
+    if(todayChart)todayChart.destroy();
+    todayChart=new Chart(document.getElementById('today-chart').getContext('2d'),{
+      type:'doughnut',
+      data:{labels:['Wins','Losses','Open'],datasets:[{data:[wins,losses,d.today.open_count||0],backgroundColor:['rgba(16,185,129,0.8)','rgba(239,68,68,0.8)','rgba(59,130,246,0.5)'],borderWidth:0}]},
+      options:{responsive:true,maintainAspectRatio:false,cutout:'65%',plugins:{legend:{display:true,position:'bottom',labels:{color:'#4a6080',font:{size:10},boxWidth:10}}}}
+    });
+  }catch(e){console.error(e);}
+}
+
+async function loadSymbols(){
+  try{
+    const [ov, sigs]=await Promise.all([fetch('/api/overview').then(r=>r.json()),fetch('/api/signals').then(r=>r.json())]);
+    const symbols=['QQQ','NVDA','TQQQ','SPY'];
+    const latest={};
+    if(Array.isArray(sigs)) sigs.forEach(s=>{ if(!latest[s.symbol]) latest[s.symbol]=s; });
+    const openBy={};
+    (ov.open_trades||[]).forEach(t=>{ openBy[t.symbol]=t; });
+    document.getElementById('sym-cards-container').innerHTML=symbols.map(sym=>{
+      const s=latest[sym]||{}; const t=openBy[sym];
+      const adx=parseFloat(s.roc_value||0);
+      const trending=adx>=20;
+      return`<div class="sym-card ${trending?'trending':'ranging'}">
+        <div class="sym-header">
+          <div>
+            <div class="sym-name">${sym} ${t?`<span class="badge badge-${t.side}">${t.side.toUpperCase()}</span>`:''}</div>
+            <div style="font-size:9px;color:${trending?'var(--blue-glow)':'var(--text-muted)'};margin-top:2px">${trending?'● TRENDING':'○ RANGING'}</div>
+          </div>
+          <div style="text-align:right">
+            <div style="color:var(--cyan);font-weight:600;font-size:13px">${s.price?'$'+parseFloat(s.price).toFixed(2):'—'}</div>
+            <div style="font-size:9px;color:var(--text-muted);margin-top:2px">${fmtTime(s.timestamp)}</div>
+          </div>
+        </div>
+        <div class="sym-grid-inner">
+          <div class="sym-stat">
+            <div class="sym-stat-label">ADX</div>
+            <div class="sym-stat-val" style="color:${adxColor(adx)}">${adx?adx.toFixed(1):'—'}</div>
+            <div class="adx-bar"><div class="adx-fill" style="width:${Math.min(adx*2,100)}%;background:${adxColor(adx)}"></div></div>
+          </div>
+          <div class="sym-stat">
+            <div class="sym-stat-label">MACD Hist</div>
+            <div class="sym-stat-val" style="color:${s.macd_confirm?'var(--green)':'var(--red)'}">${s.macd_histogram!=null?parseFloat(s.macd_histogram).toFixed(4):'—'}</div>
+          </div>
+          <div class="sym-stat">
+            <div class="sym-stat-label">VWAP</div>
+            <div class="sym-stat-val" style="color:${s.vwap_side?'var(--green)':'var(--red)'}">${s.vwap_side?'ABOVE':'BELOW'}</div>
+          </div>
+          <div class="sym-stat">
+            <div class="sym-stat-label">Volume</div>
+            <div class="sym-stat-val" style="color:${s.volume_spike?'var(--green)':'var(--text-muted)'}">${s.volume_spike?'SPIKE':'NORMAL'}</div>
+          </div>
+          <div class="sym-stat">
+            <div class="sym-stat-label">EMA State</div>
+            <div class="sym-stat-val" style="color:${s.ema_cross?'var(--green)':'var(--red)'}">${s.ema_cross?'BULL':'BEAR'}</div>
+          </div>
+          <div class="sym-stat">
+            <div class="sym-stat-label">Last Dir</div>
+            <div class="sym-stat-val" style="color:${s.direction==='long'?'var(--green)':s.direction==='short'?'var(--red)':'var(--text-muted)'}">${(s.direction||'NONE').toUpperCase()}</div>
+          </div>
+        </div>
+        ${t?`<div style="margin-top:9px;padding:7px;background:rgba(255,255,255,0.03);border-radius:6px;font-size:10px;display:flex;justify-content:space-between">
+          <span>SL: <span style="color:var(--red)">$${parseFloat(t.stop_loss).toFixed(2)}</span></span>
+          <span>TP: <span style="color:var(--green)">$${parseFloat(t.take_profit).toFixed(2)}</span></span>
+          <span>Held: <span style="color:var(--cyan)">${fmtHeld(t.entered_at)}</span></span>
+        </div>`:''}
+      </div>`;
+    }).join('');
+    document.getElementById('sym-table-body').innerHTML=symbols.map(sym=>{
+      const s=latest[sym]||{};
+      const adx=parseFloat(s.roc_value||0);
+      return`<tr>
+        <td style="font-weight:700">${sym}</td>
+        <td>${s.direction?`<span class="badge badge-${s.direction}">${s.direction.toUpperCase()}</span>`:'<span class="badge badge-none">NONE</span>'}</td>
+        <td style="color:${adxColor(adx)};font-weight:600">${adx?adx.toFixed(1):'—'}</td>
+        <td style="color:${s.score>=3?'var(--green)':s.score>=2?'var(--amber)':'var(--text-muted)'};font-weight:600">${s.score??'—'}/4</td>
+        <td style="color:${s.momentum_score>=1?'var(--green)':'var(--text-muted)'};font-weight:600">${s.momentum_score??'—'}/2</td>
+        <td>${dot(s.vwap_side)}</td>
+        <td>${dot(s.macd_confirm)}</td>
+        <td>${dot(s.rsi_confirm)}</td>
+        <td>${dot(s.ema_cross)}</td>
+        <td style="color:var(--text-muted)">${fmtTime(s.timestamp)}</td>
+      </tr>`;
+    }).join('');
   }catch(e){console.error(e);}
 }
 
@@ -559,34 +870,72 @@ async function loadSignals(){
   try{
     const rows=await fetch('/api/signals').then(r=>r.json());
     const sb=document.getElementById('signals-body');
-    if(!rows.length||rows.error){sb.innerHTML='<tr><td colspan="15" class="empty-state">No signals yet</td></tr>';return;}
-    const dot=v=>{
-      if(v===null||v===undefined)return'<span style="color:var(--text-muted);font-size:9px">—</span>';
-      return`<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${v?'var(--green)':'var(--red)'}"></span>`;
-    };
-    sb.innerHTML=rows.map(s=>`<tr>
-      <td style="color:var(--text-muted)">${fmtTime(s.timestamp)}</td>
-      <td style="color:var(--text-primary);font-weight:500">${s.symbol}</td>
-      <td>${s.direction?`<span class="badge badge-${s.direction}">${s.direction.toUpperCase()}</span>`:'<span style="color:var(--text-muted)">—</span>'}</td>
-      <td style="color:var(--cyan);font-weight:600">${s.score??'—'}/5</td>
-      <td style="color:${s.momentum_score>=2?'var(--green)':s.momentum_score===1?'var(--amber)':'var(--text-muted)'};font-weight:600">${s.momentum_score??'—'}/3</td>
-      <td>${dot(s.ema_cross)}</td>
-      <td>${dot(s.vwap_side)}</td>
-      <td>${dot(s.volume_spike)}</td>
-      <td>${dot(s.rsi_confirm)}</td>
-      <td>${dot(s.price_action)}</td>
-      <td>${dot(s.roc_confirm)}</td>
-      <td>${dot(s.macd_confirm)}</td>
-      <td>${dot(s.candle_confirm)}</td>
-      <td>${dot(s.mtf_ok)}</td>
-      <td>${s.traded?'<span class="badge badge-open">TRADED</span>':'<span style="color:var(--text-muted)">—</span>'}</td>
-    </tr>`).join('');
+    if(!rows.length||rows.error){sb.innerHTML='<tr><td colspan="14" class="empty-state">No signals yet</td></tr>';return;}
+    let total=0,adxB=0,clB=0,tr=0;
+    rows.forEach(s=>{total++;if(s.score===0&&!s.direction)adxB++;else if(!s.direction&&s.score>0)clB++;if(s.traded)tr++;});
+    document.getElementById('sig-total').textContent=total;
+    document.getElementById('sig-adx-blocked').textContent=adxB;
+    document.getElementById('sig-claude-blocked').textContent=clB;
+    document.getElementById('sig-traded').textContent=tr;
+    sb.innerHTML=rows.map(s=>{
+      const adx=parseFloat(s.roc_value||0);
+      const isBlocked=s.score===0&&!s.direction;
+      return`<tr style="${isBlocked?'opacity:0.4':''}${s.traded?';background:rgba(16,185,129,0.04)':''}">
+        <td style="color:var(--text-muted)">${fmtTime(s.timestamp)}</td>
+        <td style="font-weight:700">${s.symbol}</td>
+        <td>${s.direction?`<span class="badge badge-${s.direction}">${s.direction.toUpperCase()}</span>`:'<span class="badge badge-none">NONE</span>'}</td>
+        <td style="color:${s.score>=3?'var(--green)':s.score>=2?'var(--amber)':'var(--text-muted)'};font-weight:600">${s.score??'—'}/4</td>
+        <td style="color:${(s.momentum_score||0)>=1?'var(--green)':'var(--text-muted)'};font-weight:600">${s.momentum_score??'—'}/2</td>
+        <td style="color:${adxColor(adx)};font-weight:600">${adx?adx.toFixed(1):'—'}</td>
+        ${[s.ema_cross,s.vwap_side,s.volume_spike,s.price_action,s.macd_confirm,s.rsi_confirm,s.mtf_ok].map(v=>dot(v)).map(d=>`<td>${d}</td>`).join('')}
+        <td>${s.traded?'<span class="badge badge-open">TRADED</span>':isBlocked?'<span class="badge badge-none">ADX</span>':'<span style="color:var(--text-muted);font-size:9px">—</span>'}</td>
+      </tr>`;
+    }).join('');
+  }catch(e){console.error(e);}
+}
+
+async function loadRisk(){
+  try{
+    const [ov,health]=await Promise.all([fetch('/api/overview').then(r=>r.json()),fetch('/api/health').then(r=>r.json())]);
+    const pnl=ov.today?.pnl||0;
+    const used=Math.abs(Math.min(pnl,0)),limit=600,usedPct=Math.min(used/limit*100,100);
+    document.getElementById('risk-pnl').textContent=fmt(pnl);
+    document.getElementById('risk-pnl').className='stat-value '+(pnl>=0?'green':usedPct>70?'red':'amber');
+    document.getElementById('risk-pnl-bar').style.cssText=`width:${usedPct}%;background:${usedPct>70?'var(--red)':usedPct>40?'var(--amber)':'var(--green)'}`;
+    document.getElementById('risk-pnl-sub').textContent=`$${used.toFixed(0)} of $${limit} used`;
+    const ot=ov.open_trades||[];
+    let exposure=0; ot.forEach(t=>{ exposure+=parseFloat(t.entry_price)*parseFloat(t.qty)*10; });
+    document.getElementById('risk-exposure').textContent='$'+Math.round(exposure).toLocaleString();
+    document.getElementById('risk-exposure-bar').style.width=Math.min(exposure/20000*100,100)+'%';
+    document.getElementById('risk-kill').textContent=usedPct>=100?'KILLED':'ACTIVE';
+    document.getElementById('risk-kill').className='stat-value '+(usedPct>=100?'red':'green');
+    document.getElementById('risk-kill-sub').textContent=usedPct>=100?'Loss limit hit':'Running normally';
+    document.getElementById('cooldown-list').innerHTML=!ot.length?'<div class="empty-state">No open positions</div>'
+      :ot.map(t=>`<div class="cooldown-item"><span style="font-weight:700">${t.symbol} <span class="badge badge-${t.side}">${t.side.toUpperCase()}</span></span><span style="color:var(--cyan)">${fmtHeld(t.entered_at)}</span></div>`).join('');
+    document.getElementById('risk-trades-body').innerHTML=!ot.length?'<tr><td colspan="10" class="empty-state">No open positions</td></tr>'
+      :ot.map(t=>{
+        const e=parseFloat(t.entry_price),sl=parseFloat(t.stop_loss),tp=parseFloat(t.take_profit);
+        const atr=t.atr?parseFloat(t.atr):0;
+        const rr=Math.abs(tp-e)&&Math.abs(e-sl)?(Math.abs(tp-e)/Math.abs(e-sl)).toFixed(2):'—';
+        return`<tr>
+          <td style="font-weight:700">${t.symbol}</td>
+          <td><span class="badge badge-${t.side}">${t.side.toUpperCase()}</span></td>
+          <td>$${e.toFixed(2)}</td>
+          <td style="color:var(--red)">$${sl.toFixed(2)}</td>
+          <td style="color:var(--green)">$${tp.toFixed(2)}</td>
+          <td style="color:var(--text-muted)">${atr?atr.toFixed(4):'—'}</td>
+          <td style="color:var(--red)">$${Math.abs(e-sl).toFixed(2)}</td>
+          <td style="color:var(--green)">$${Math.abs(tp-e).toFixed(2)}</td>
+          <td style="color:${parseFloat(rr)>=1.5?'var(--green)':parseFloat(rr)>=1?'var(--amber)':'var(--red)'};font-weight:600">${rr}:1</td>
+          <td style="color:var(--text-muted)">${fmtHeld(t.entered_at)}</td>
+        </tr>`;
+      }).join('');
   }catch(e){console.error(e);}
 }
 
 function dimSection(id,dim){
   const el=document.getElementById(id);
-  if(el) el.className=dim?'dimmed':'';
+  if(el)el.className=dim?'dimmed':'';
 }
 
 async function loadConfig(){
@@ -599,23 +948,33 @@ async function loadConfig(){
       if(ve)ve.textContent=val+(suffix||'');
       configState[key]=val;
     };
-    s('EMA_FAST',          cfg.EMA_FAST);
-    s('EMA_SLOW',          cfg.EMA_SLOW);
-    s('PRIME_BASE_MIN',    cfg.PRIME_BASE_MIN);
-    s('REGULAR_BASE_MIN',  cfg.REGULAR_BASE_MIN);
-    s('PRIME_END_HOUR',    cfg.PRIME_END_HOUR);
-    s('VWAP_DEV_MULT',     cfg.VWAP_DEV_MULT);
-    s('VOL_ACCEL_MULT',    cfg.VOL_ACCEL_MULT);
-    s('RSI_OVERBOUGHT',    cfg.RSI_OVERBOUGHT);
-    s('RSI_OVERSOLD',      cfg.RSI_OVERSOLD);
-    s('SIMULATED_LEVERAGE', cfg.SIMULATED_LEVERAGE,'x');
-    s('MAX_OPEN_TRADES',   cfg.MAX_OPEN_TRADES);
-    s('ATR_STOP_MULT',     cfg.ATR_STOP_MULT);
-    s('ATR_TP_MULT',       cfg.ATR_TP_MULT);
-    s('BREAKEVEN_ATR_MULT',cfg.BREAKEVEN_ATR_MULT);
-    s('TRAIL_STEP',        cfg.TRAIL_STEP??0.5);
-    s('LOSS_COOLDOWN_MINS',cfg.LOSS_COOLDOWN_MINS,'m');
-    s('MIN_RR',            cfg.MIN_RR);
+    s('ADX_MIN_THRESHOLD',cfg.ADX_MIN_THRESHOLD??20);
+    s('EMA_FAST',cfg.EMA_FAST); s('EMA_SLOW',cfg.EMA_SLOW);
+    s('PRIME_BASE_MIN',cfg.PRIME_BASE_MIN); s('REGULAR_BASE_MIN',cfg.REGULAR_BASE_MIN);
+    s('PRIME_END_HOUR',cfg.PRIME_END_HOUR);
+    s('VWAP_DEV_MULT',cfg.VWAP_DEV_MULT); s('VOL_ACCEL_MULT',cfg.VOL_ACCEL_MULT);
+    s('RSI_OVERBOUGHT',cfg.RSI_OVERBOUGHT); s('RSI_OVERSOLD',cfg.RSI_OVERSOLD);
+    s('SIMULATED_LEVERAGE',cfg.SIMULATED_LEVERAGE,'x');
+    s('MAX_OPEN_TRADES',cfg.MAX_OPEN_TRADES);
+    s('ATR_STOP_MULT',cfg.ATR_STOP_MULT); s('ATR_TP_MULT',cfg.ATR_TP_MULT);
+    s('BREAKEVEN_ATR_MULT',cfg.BREAKEVEN_ATR_MULT); s('TRAIL_STEP',cfg.TRAIL_STEP??0.5);
+    s('MIN_RR',cfg.MIN_RR); s('LOSS_COOLDOWN_MINS',cfg.LOSS_COOLDOWN_MINS,'m');
+    s('MACD_FAST',cfg.MACD_FAST??5); s('MACD_SLOW',cfg.MACD_SLOW??13);
+    s('MACD_SIGNAL_PERIOD',cfg.MACD_SIGNAL_PERIOD??9);
+    s('MOMENTUM_GATE_MIN',cfg.MOMENTUM_GATE_MIN);
+    s('MTF_EMA_PERIOD',cfg.MTF_EMA_PERIOD);
+    s('FLIP_MIN_SIGNALS',cfg.FLIP_MIN_SIGNALS??3);
+    s('FLIP_BASE_SCORE_MIN',cfg.FLIP_BASE_SCORE_MIN??4);
+    s('DYNAMIC_TP_EXTENSION',cfg.DYNAMIC_TP_EXTENSION);
+    s('DYNAMIC_TP_MIN_MOMENTUM',cfg.DYNAMIC_TP_MIN_MOMENTUM);
+    s('FAST_SCAN_SCORE',cfg.FAST_SCAN_SCORE); s('FAST_SCAN_INTERVAL',cfg.FAST_SCAN_INTERVAL,'s');
+    // Flip cooldown (seconds → minutes for slider)
+    const fcs=cfg.FLIP_COOLDOWN_SEC??600,fcm=Math.round(fcs/60);
+    const fcEl=document.getElementById('ctrl-FLIP_COOLDOWN_SEC_min');
+    if(fcEl)fcEl.value=fcm;
+    document.getElementById('val-FLIP_COOLDOWN_SEC').textContent=fcm+'m';
+    configState['FLIP_COOLDOWN_SEC']=fcs;
+    // % sliders
     const dlPct=Math.round(cfg.MAX_DAILY_LOSS_PCT*100);
     const dlEl=document.getElementById('ctrl-MAX_DAILY_LOSS_PCT_pct');
     if(dlEl)dlEl.value=dlPct;
@@ -626,76 +985,28 @@ async function loadConfig(){
     if(mpEl)mpEl.value=mpPct;
     document.getElementById('val-MAX_POSITION_PCT').textContent=mpPct+'%';
     configState['MAX_POSITION_PCT']=cfg.MAX_POSITION_PCT;
-    const mgEnabled=parseInt(cfg.MOMENTUM_GATE_ENABLED??1);
-    const mgEl=document.getElementById('ctrl-MOMENTUM_GATE_ENABLED');
-    if(mgEl)mgEl.checked=mgEnabled===1;
-    configState['MOMENTUM_GATE_ENABLED']=mgEnabled;
-    dimSection('mom-controls',mgEnabled===0);
-    s('MOMENTUM_GATE_MIN',           cfg.MOMENTUM_GATE_MIN);
-    s('ROC_PERIOD',                  cfg.ROC_PERIOD);
-    s('ROC_MIN_LONG',                cfg.ROC_MIN_LONG);
-    s('ROC_MIN_SHORT',               cfg.ROC_MIN_SHORT);
-    s('MACD_FAST',                   cfg.MACD_FAST);
-    s('MACD_SLOW',                   cfg.MACD_SLOW);
-    s('MACD_SIGNAL_PERIOD',          cfg.MACD_SIGNAL_PERIOD);
-    s('CANDLE_CONSISTENCY_LOOKBACK', cfg.CANDLE_CONSISTENCY_LOOKBACK);
-    s('CANDLE_CONSISTENCY_MIN',      cfg.CANDLE_CONSISTENCY_MIN);
-    const mtfEnabled=parseInt(cfg.MTF_FILTER_ENABLED??1);
-    const mtfEl=document.getElementById('ctrl-MTF_FILTER_ENABLED');
-    if(mtfEl)mtfEl.checked=mtfEnabled===1;
-    configState['MTF_FILTER_ENABLED']=mtfEnabled;
-    dimSection('mtf-controls',mtfEnabled===0);
-    s('MTF_EMA_PERIOD',cfg.MTF_EMA_PERIOD);
-    const dtpEnabled=parseInt(cfg.DYNAMIC_TP_ENABLED??1);
-    const dtpEl=document.getElementById('ctrl-DYNAMIC_TP_ENABLED');
-    if(dtpEl)dtpEl.checked=dtpEnabled===1;
-    configState['DYNAMIC_TP_ENABLED']=dtpEnabled;
-    dimSection('dtp-controls',dtpEnabled===0);
-    s('DYNAMIC_TP_EXTENSION',    cfg.DYNAMIC_TP_EXTENSION);
-    s('DYNAMIC_TP_MIN_MOMENTUM', cfg.DYNAMIC_TP_MIN_MOMENTUM);
-    const fsEnabled=parseInt(cfg.FAST_SCAN_ENABLED??1);
-    const fsEl=document.getElementById('ctrl-FAST_SCAN_ENABLED');
-    if(fsEl)fsEl.checked=fsEnabled===1;
-    configState['FAST_SCAN_ENABLED']=fsEnabled;
-    dimSection('fast-controls',fsEnabled===0);
-    s('FAST_SCAN_SCORE',    cfg.FAST_SCAN_SCORE);
-    s('FAST_SCAN_INTERVAL', cfg.FAST_SCAN_INTERVAL,'s');
-    const flipEnabled=parseInt(cfg.FLIP_ENABLED??1);
-    const flipEl=document.getElementById('ctrl-FLIP_ENABLED');
-    if(flipEl)flipEl.checked=flipEnabled===1;
-    configState['FLIP_ENABLED']=flipEnabled;
-    dimSection('flip-controls',flipEnabled===0);
-    s('FLIP_MIN_SIGNALS',    cfg.FLIP_MIN_SIGNALS);
-    s('FLIP_BASE_SCORE_MIN', cfg.FLIP_BASE_SCORE_MIN??3);
-    // Morning blackout
-    const mbEnabled=parseInt(cfg.MORNING_BLACKOUT_ENABLED??0);
-    const mbEl=document.getElementById('ctrl-MORNING_BLACKOUT_ENABLED');
-    if(mbEl)mbEl.checked=mbEnabled===1;
-    configState['MORNING_BLACKOUT_ENABLED']=mbEnabled;
-    dimSection('morning-mins',mbEnabled===0);
+    // Toggles
+    const tog=(key,def=1)=>{
+      const v=parseInt(cfg[key]??def);
+      const el=document.getElementById('ctrl-'+key);
+      if(el)el.checked=v===1; configState[key]=v; return v;
+    };
+    const mgOn=tog('MOMENTUM_GATE_ENABLED'); dimSection('mom-controls',mgOn===0);
+    const mtfOn=tog('MTF_FILTER_ENABLED');   dimSection('mtf-controls',mtfOn===0);
+    const dtpOn=tog('DYNAMIC_TP_ENABLED');   dimSection('dtp-controls',dtpOn===0);
+    const fsOn=tog('FAST_SCAN_ENABLED');     dimSection('fast-controls',fsOn===0);
+    const flOn=tog('FLIP_ENABLED');          dimSection('flip-controls',flOn===0);
+    const mbOn=tog('MORNING_BLACKOUT_ENABLED',0); dimSection('morning-mins',mbOn===0);
+    tog('TRADING_PAUSED',0); tog('CLOSE_EOD',1);
+    const boOn=tog('BLACKOUT_ENABLED',0); dimSection('blackout-time',boOn===0);
     const mbMins=document.getElementById('ctrl-MORNING_BLACKOUT_MINS');
-    if(mbMins)mbMins.value=cfg.MORNING_BLACKOUT_MINS??10;
-    configState['MORNING_BLACKOUT_MINS']=cfg.MORNING_BLACKOUT_MINS??10;
-    // Other session controls
-    const paused=parseInt(cfg.TRADING_PAUSED??0);
-    const pausedEl=document.getElementById('ctrl-TRADING_PAUSED');
-    if(pausedEl)pausedEl.checked=paused===1;
-    configState['TRADING_PAUSED']=paused;
-    const closeEod=parseInt(cfg.CLOSE_EOD??1);
-    const eodEl=document.getElementById('ctrl-CLOSE_EOD');
-    if(eodEl)eodEl.checked=closeEod===1;
-    configState['CLOSE_EOD']=closeEod;
-    const boEnabled=parseInt(cfg.BLACKOUT_ENABLED??0);
-    const boEl=document.getElementById('ctrl-BLACKOUT_ENABLED');
-    if(boEl)boEl.checked=boEnabled===1;
-    configState['BLACKOUT_ENABLED']=boEnabled;
-    dimSection('blackout-time',boEnabled===0);
-    const boStart=document.getElementById('ctrl-BLACKOUT_START');
-    const boEnd=document.getElementById('ctrl-BLACKOUT_END');
-    if(boStart)boStart.value=cfg.BLACKOUT_START??11;
-    if(boEnd)boEnd.value=cfg.BLACKOUT_END??13;
+    if(mbMins)mbMins.value=cfg.MORNING_BLACKOUT_MINS??15;
+    configState['MORNING_BLACKOUT_MINS']=cfg.MORNING_BLACKOUT_MINS??15;
+    const bS=document.getElementById('ctrl-BLACKOUT_START'),bE=document.getElementById('ctrl-BLACKOUT_END');
+    if(bS)bS.value=cfg.BLACKOUT_START??11; if(bE)bE.value=cfg.BLACKOUT_END??13;
     configState['BLACKOUT_START']=cfg.BLACKOUT_START??11;
     configState['BLACKOUT_END']=cfg.BLACKOUT_END??13;
+    await loadAPIHealth();
   }catch(e){console.error(e);}
 }
 
@@ -711,6 +1022,11 @@ function updateValPct(el,realKey){
   configState[realKey]=pct/100;
   document.getElementById('val-'+realKey).textContent=pct+'%';
 }
+function updateFlipCooldown(el){
+  const mins=parseInt(el.value);
+  configState['FLIP_COOLDOWN_SEC']=mins*60;
+  document.getElementById('val-FLIP_COOLDOWN_SEC').textContent=mins+'m';
+}
 function toggleBool(checkbox,key){configState[key]=checkbox.checked?1:0;}
 
 async function saveConfig(){
@@ -718,28 +1034,52 @@ async function saveConfig(){
   status.textContent='Saving...'; status.style.color='var(--text-muted)';
   try{
     const d=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(configState)}).then(r=>r.json());
-    status.textContent=d.success?'✓ Saved — takes effect on next scan':'Error: '+d.error;
+    status.textContent=d.success?'✓ Saved':'Error: '+d.error;
     status.style.color=d.success?'var(--green)':'var(--red)';
-  }catch(e){status.textContent='Failed to save';status.style.color='var(--red)';}
+  }catch(e){status.textContent='Failed';status.style.color='var(--red)';}
   setTimeout(()=>{status.textContent='';},4000);
+}
+async function pauseTrading(){
+  configState['TRADING_PAUSED']=(configState['TRADING_PAUSED']||0)===1?0:1;
+  const el=document.getElementById('ctrl-TRADING_PAUSED');
+  if(el)el.checked=configState['TRADING_PAUSED']===1;
+  await saveConfig();
 }
 
 async function loadPerformance(){
   try{
     const d=await fetch('/api/performance').then(r=>r.json());
+    const tPnl=d.daily.reduce((a,x)=>a+x.pnl,0);
+    const tTr=d.daily.reduce((a,x)=>a+x.trades,0);
+    const tW=d.daily.reduce((a,x)=>a+x.wins,0);
+    document.getElementById('perf-pnl').textContent=fmt(tPnl,false);
+    document.getElementById('perf-pnl').className='stat-value '+(tPnl>=0?'green':'red');
+    document.getElementById('perf-wr').textContent=tTr?Math.round(tW/tTr*100)+'%':'—%';
+    document.getElementById('perf-trades').textContent=tTr+' trades';
+    const best=d.daily.length?d.daily.reduce((a,b)=>b.pnl>a.pnl?b:a):{pnl:0,trade_date:''};
+    const worst=d.daily.length?d.daily.reduce((a,b)=>b.pnl<a.pnl?b:a):{pnl:0,trade_date:''};
+    document.getElementById('perf-best').textContent=fmt(best.pnl,false);
+    document.getElementById('perf-best-date').textContent=best.trade_date?.slice(5)||'—';
+    document.getElementById('perf-worst').textContent=fmt(worst.pnl,false);
+    document.getElementById('perf-worst-date').textContent=worst.trade_date?.slice(5)||'—';
     if(pnlChart)pnlChart.destroy();
     const ctx=document.getElementById('pnl-chart').getContext('2d');
     if(!d.daily.length){ctx.fillStyle='#4a6080';ctx.font='12px monospace';ctx.fillText('No trade data yet',20,100);}
-    else{
-      pnlChart=new Chart(ctx,{type:'bar',data:{labels:d.daily.map(x=>x.trade_date.slice(5)),datasets:[{label:'P&L',data:d.daily.map(x=>x.pnl),backgroundColor:d.daily.map(x=>x.pnl>=0?'rgba(16,185,129,0.7)':'rgba(239,68,68,0.7)'),borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#4a6080',font:{size:10}},grid:{color:'rgba(255,255,255,0.04)'}},y:{ticks:{color:'#4a6080',font:{size:10},callback:v=>'$'+v},grid:{color:'rgba(255,255,255,0.04)'}}}}}); 
-    }
-    const sb=document.getElementById('symbol-body');
-    sb.innerHTML=!d.by_symbol.length?'<tr><td colspan="4" class="empty-state">No data yet</td></tr>'
-      :d.by_symbol.map(s=>{const wr=s.trades?Math.round(s.wins/s.trades*100):0;return`<tr><td style="color:var(--text-primary)">${s.symbol}</td><td>${s.trades}</td><td style="color:var(--cyan)">${wr}%</td><td style="color:${s.pnl>=0?'var(--green)':'var(--red)'}">${fmt(s.pnl)}</td></tr>`;}).join('');
-    const total=d.by_symbol.reduce((a,s)=>a+s.trades,0);
-    const wins=d.by_symbol.reduce((a,s)=>a+s.wins,0);
+    else pnlChart=new Chart(ctx,{type:'bar',data:{labels:d.daily.map(x=>x.trade_date.slice(5)),datasets:[{label:'P&L',data:d.daily.map(x=>x.pnl),backgroundColor:d.daily.map(x=>x.pnl>=0?'rgba(16,185,129,0.7)':'rgba(239,68,68,0.7)'),borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#4a6080',font:{size:10}},grid:{color:'rgba(255,255,255,0.04)'}},y:{ticks:{color:'#4a6080',font:{size:10},callback:v=>'$'+v},grid:{color:'rgba(255,255,255,0.04)'}}}}});
+    document.getElementById('symbol-body').innerHTML=!d.by_symbol.length?'<tr><td colspan="4" class="empty-state">No data</td></tr>'
+      :d.by_symbol.map(s=>{const wr=s.trades?Math.round(s.wins/s.trades*100):0;return`<tr><td style="font-weight:700">${s.symbol}</td><td>${s.trades}</td><td style="color:${wr>=50?'var(--green)':wr>=40?'var(--amber)':'var(--red)'};font-weight:600">${wr}%</td><td style="color:${s.pnl>=0?'var(--green)':'var(--red)'};font-weight:600">${fmt(s.pnl)}</td></tr>`;}).join('');
+    const t2=d.by_symbol.reduce((a,s)=>a+s.trades,0),w2=d.by_symbol.reduce((a,s)=>a+s.wins,0);
     if(wrChart)wrChart.destroy();
-    wrChart=new Chart(document.getElementById('wr-chart').getContext('2d'),{type:'doughnut',data:{labels:['Wins','Losses'],datasets:[{data:[wins||1,(total-wins)||1],backgroundColor:['rgba(16,185,129,0.8)','rgba(239,68,68,0.8)'],borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,cutout:'70%',plugins:{legend:{display:false}}}});
+    wrChart=new Chart(document.getElementById('wr-chart').getContext('2d'),{type:'doughnut',data:{labels:['Wins','Losses'],datasets:[{data:[w2||1,(t2-w2)||1],backgroundColor:['rgba(16,185,129,0.8)','rgba(239,68,68,0.8)'],borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,cutout:'70%',plugins:{legend:{display:false}}}});
+    try{
+      const exits=await fetch('/api/exits').then(r=>r.json());
+      document.getElementById('exit-body').innerHTML=exits?.length?exits.map(e=>`<tr>
+        <td><span class="badge ${e.exit_reason?.includes('profit')?'badge-open':e.exit_reason==='stop'||e.exit_reason?.includes('trail')?'badge-stopped':'badge-closed'}">${e.exit_reason||'unknown'}</span></td>
+        <td>${e.count}</td>
+        <td style="color:${e.total_pnl>=0?'var(--green)':'var(--red)'};font-weight:600">${fmt(e.total_pnl)}</td>
+        <td style="color:${e.avg_pnl>=0?'var(--green)':'var(--red)'}">${fmt(e.avg_pnl)}</td>
+      </tr>`).join(''):'<tr><td colspan="4" class="empty-state">No data</td></tr>';
+    }catch(e){}
   }catch(e){console.error(e);}
 }
 
@@ -748,15 +1088,15 @@ async function loadMeta(){
     const rows=await fetch('/api/meta').then(r=>r.json());
     const c=document.getElementById('meta-reviews-container');
     if(!rows.length){c.innerHTML='<div class="empty-state">No reviews yet.</div>';return;}
-    c.innerHTML=rows.map(rev=>`<div class="panel" style="margin-bottom:16px">
+    c.innerHTML=rows.map(rev=>`<div class="panel" style="margin-bottom:12px">
       <div class="panel-header">
-        <div class="panel-title"><i class="ti ti-brain"></i> Meta Brain Review — ${rev.reviewed_at?new Date(rev.reviewed_at).toLocaleDateString():'—'}</div>
-        <div style="display:flex;gap:16px;font-size:11px;color:var(--text-muted)">
-          <span>Win rate: <span style="color:var(--cyan)">${rev.win_rate_7d?rev.win_rate_7d.toFixed(1):'—'}%</span></span>
+        <div class="panel-title"><i class="ti ti-brain"></i> Meta Brain — ${rev.reviewed_at?new Date(rev.reviewed_at).toLocaleDateString():'—'}</div>
+        <div style="display:flex;gap:12px;font-size:10px;color:var(--text-muted)">
+          <span>WR: <span style="color:var(--cyan)">${rev.win_rate_7d?rev.win_rate_7d.toFixed(1):'—'}%</span></span>
           <span>R:R: <span style="color:var(--cyan)">${rev.avg_rr?rev.avg_rr.toFixed(2):'—'}</span></span>
         </div>
       </div>
-      <div class="panel-body"><div style="white-space:pre-wrap;font-size:12px;line-height:1.8;color:var(--text-secondary)">${rev.full_report||'—'}</div></div>
+      <div class="panel-body"><div style="white-space:pre-wrap;font-size:11px;line-height:1.9;color:var(--text-secondary)">${rev.full_report||'—'}</div></div>
     </div>`).join('');
   }catch(e){console.error(e);}
 }
@@ -772,25 +1112,42 @@ async function runMeta(){
 }
 
 function loadLogs(){
+  const showBlocked=document.getElementById('log-show-blocked')?.checked;
+  const showNone=document.getElementById('log-show-none')?.checked;
   fetch('/api/signals').then(r=>r.json()).then(signals=>{
-    const container=document.getElementById('log-container');
-    if(!signals.length){container.innerHTML='<div style="color:var(--text-muted)">No signals yet. Market opens 9:30am ET.</div>';return;}
-    container.innerHTML=signals.slice(0,200).map(s=>{
-      const dir=s.direction?s.direction.toUpperCase():'SCAN';
-      const checks=[
-        s.ema_cross?'EMA✓':'EMA✗',s.vwap_side?'VWAP✓':'VWAP✗',
-        s.volume_spike?'VOL✓':'VOL✗',s.rsi_confirm?'RSI✓':'RSI✗',
-        s.price_action?'DEV✓':'DEV✗'
-      ].join(' ');
-      return`<div class="log-entry"><span class="log-time">${fmtTime(s.timestamp)}</span><span class="log-level-info">[SIGNAL]</span><span class="log-msg ${s.traded?'highlight':''}">${s.symbol} ${dir} [${s.score}/5] ${checks}${s.traded?' → TRADED':''}</span></div>`;
+    const c=document.getElementById('log-container');
+    if(!signals.length){c.innerHTML='<div style="color:var(--text-muted)">No signals yet.</div>';return;}
+    const f=signals.filter(s=>{
+      const adxB=s.score===0&&!s.direction;
+      const clN=!s.direction&&s.score>0;
+      if(adxB&&!showBlocked)return false;
+      if(clN&&!showNone)return false;
+      return true;
+    });
+    c.innerHTML=f.slice(0,200).map(s=>{
+      const adx=parseFloat(s.roc_value||0);
+      const adxB=s.score===0&&!s.direction;
+      const dir=s.direction?s.direction.toUpperCase():'NONE';
+      const dc=s.direction==='long'?'var(--green)':s.direction==='short'?'var(--red)':'var(--text-muted)';
+      const checks=`EMA:${s.ema_cross?'✓':'✗'} VWAP:${s.vwap_side?'✓':'✗'} VOL:${s.volume_spike?'✓':'✗'} DEV:${s.price_action?'✓':'✗'} MACD:${s.macd_confirm?'✓':'✗'} RSI50:${s.rsi_confirm?'✓':'✗'}`;
+      return`<div class="log-entry">
+        <span class="log-time">${fmtTime(s.timestamp)}</span>
+        <span class="log-tag">${s.symbol}</span>
+        <span class="log-msg ${s.traded?'traded':adxB?'blocked':''}">
+          ${adxB?`<span style="color:var(--amber)">[ADX=${adx.toFixed(1)} RANGING — BLOCKED]</span>`
+          :`<span style="color:${dc}">[${dir}]</span> ${s.score}/4 mom=${s.momentum_score}/2 ADX=${adx.toFixed(1)} | ${checks}${s.traded?' <span style="color:var(--green)">→ TRADED</span>':''}`}
+        </span>
+      </div>`;
     }).join('');
-    container.scrollTop=0;
+    c.scrollTop=0;
   }).catch(()=>{document.getElementById('log-container').innerHTML='<div style="color:var(--red)">Failed to load.</div>';});
 }
 
 marketStatus();
 loadOverview();
+loadAPIHealth();
 setInterval(loadOverview,30000);
+setInterval(loadAPIHealth,60000);
 setInterval(marketStatus,30000);
 setInterval(loadLogs,60000);
 </script>
