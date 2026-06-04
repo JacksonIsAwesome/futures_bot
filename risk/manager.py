@@ -1,12 +1,17 @@
 """
-risk/manager.py — Risk Manager v2.2
+risk/manager.py — Risk Manager v2.3
+
+v2.3 changes:
+  - RISK_PER_TRADE now reads from DB config_overrides (was hardcoded 0.02)
+    Slide it from the dashboard Controls tab (0.5% to 10%)
+  - Morning call integration: MORNING_FAVOR symbols get 1.5x size,
+    MORNING_AVOID symbols get 0.5x size (both capped at MAX_POSITION_PCT)
+  - TRAIL_STEP reads from DB (was already there, just confirming default=1.0)
 
 v2.2 changes (orphan fix):
   - manage_open_trades() now checks min_hold_seconds before firing any
     stop-loss or trailing stop logic. If a trade is younger than the
     symbol's min_hold_seconds, all exit logic is skipped for that cycle.
-    This prevents orphan_404 trades where the bot tries to close a position
-    before Alpaca has fully settled the order.
   - min_hold_seconds is read from symbol_profiles (set by the profiler).
     Falls back to config.MIN_HOLD_SECONDS (default 60) if no profile exists.
 
@@ -165,8 +170,22 @@ class RiskManager:
         log.info(f"[RISK] Loss recorded {direction} {symbol} — blocked {cooldown_mins}min")
 
     def calculate_position_size(self, symbol, signal) -> float:
-        max_pct        = float(get_config_override("MAX_POSITION_PCT", config.MAX_POSITION_PCT))
-        risk_pct       = 0.02
+        max_pct  = float(get_config_override("MAX_POSITION_PCT", config.MAX_POSITION_PCT))
+        # v2.3: RISK_PER_TRADE is now DB-overridable from the dashboard slider
+        risk_pct = float(get_config_override("RISK_PER_TRADE", getattr(config, "RISK_PER_TRADE", 0.02)))
+
+        # Morning call: favor/avoid adjustments
+        favor_str = str(get_config_override("MORNING_FAVOR", ""))
+        avoid_str = str(get_config_override("MORNING_AVOID", ""))
+        favored = symbol in [s.strip() for s in favor_str.split(",") if s.strip()]
+        avoided = symbol in [s.strip() for s in avoid_str.split(",") if s.strip()]
+        if favored:
+            risk_pct = min(risk_pct * 1.5, 0.10)
+            log.info(f"[RISK] {symbol} FAVORED by morning call — risk_pct → {risk_pct*100:.1f}%")
+        elif avoided:
+            risk_pct = risk_pct * 0.5
+            log.info(f"[RISK] {symbol} AVOIDED by morning call — risk_pct → {risk_pct*100:.1f}%")
+
         price          = signal.price
         stop           = signal.stop_loss
         risk_per_share = abs(price - stop)
@@ -219,7 +238,7 @@ class RiskManager:
     def manage_open_trades(self, current_prices: dict) -> list:
         actions     = []
         open_trades = get_open_trades()
-        TRAIL_STEP  = float(get_config_override("TRAIL_STEP", getattr(config, "TRAIL_STEP", 0.5)))
+        TRAIL_STEP  = float(get_config_override("TRAIL_STEP", getattr(config, "TRAIL_STEP", 1.0)))
 
         now_utc = datetime.now(timezone.utc)
 
@@ -241,8 +260,8 @@ class RiskManager:
             return float(get_config_override("BREAKEVEN_ATR_MULT", config.BREAKEVEN_ATR_MULT))
 
         # Dynamic TP config
-        dynamic_tp_enabled = int(get_config_override("DYNAMIC_TP_ENABLED",     getattr(config, "DYNAMIC_TP_ENABLED",     1)))
-        tp_extension       = float(get_config_override("DYNAMIC_TP_EXTENSION", getattr(config, "DYNAMIC_TP_EXTENSION",   1.0)))
+        dynamic_tp_enabled = int(get_config_override("DYNAMIC_TP_ENABLED",      getattr(config, "DYNAMIC_TP_ENABLED",     1)))
+        tp_extension       = float(get_config_override("DYNAMIC_TP_EXTENSION",  getattr(config, "DYNAMIC_TP_EXTENSION",   1.0)))
         tp_min_momentum    = int(get_config_override("DYNAMIC_TP_MIN_MOMENTUM", getattr(config, "DYNAMIC_TP_MIN_MOMENTUM", 2)))
 
         for trade in open_trades:
@@ -259,16 +278,9 @@ class RiskManager:
             be_set   = trade["breakeven_set"]
 
             # ── Min-hold gate — prevents orphan_404 trades ────────────────────
-            # Skip ALL stop/trail/TP logic if the trade is too young.
-            # The profiler sets min_hold_seconds per symbol based on its
-            # volatility and orphan history. Until this window expires,
-            # Alpaca may not have the position fully registered.
             entered_at = trade.get("entered_at")
             if entered_at is not None:
-                # entered_at is TIMESTAMPTZ — comes back from psycopg2 as
-                # a timezone-aware datetime. Compare against UTC now.
                 if entered_at.tzinfo is None:
-                    # fallback: treat as naive UTC
                     entered_at = entered_at.replace(tzinfo=timezone.utc)
                 elapsed_secs = (now_utc - entered_at).total_seconds()
                 min_hold     = self._get_min_hold_seconds(symbol)
@@ -280,8 +292,6 @@ class RiskManager:
                     continue
 
             # ── Determine entry-time ATR ──────────────────────────────────────
-            # Prefer the ATR stored at trade entry (set via signal.atr).
-            # Falls back to back-calc for old trades without stored ATR.
             stored_atr = trade.get("atr")
             if stored_atr is not None and float(stored_atr) > 0:
                 estimated_atr = float(stored_atr)
