@@ -131,10 +131,11 @@ def get_config():
             'MAX_DAILY_LOSS_PCT': 0.30,
             'MAX_OPEN_TRADES':    7,
             'MAX_POSITION_PCT':   0.20,
+            'RISK_PER_TRADE':     0.02,   # fraction of capital risked per trade
             'ATR_STOP_MULT':      2.0,
             'ATR_TP_MULT':        4.0,
             'BREAKEVEN_ATR_MULT': 0.75,
-            'TRAIL_STEP':         0.5,
+            'TRAIL_STEP':         1.0,    # updated: wider trail (was 0.5)
             'STARTING_CAPITAL':   2000.0,
             'LOSS_COOLDOWN_MINS': 20,
             'MIN_RR':             1.0,
@@ -269,6 +270,32 @@ def performance():
             for s in by_symbol:
                 s['pnl'] = round(float(s['pnl']),2)
             return jsonify({'daily': daily, 'by_symbol': by_symbol})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/morning')
+def morning():
+    """Return today's Opus pre-market session call results."""
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+            cur.execute("""
+                SELECT key, value, updated_at
+                FROM config_overrides
+                WHERE key IN (
+                    'MORNING_BIAS','MORNING_FAVOR','MORNING_AVOID',
+                    'MORNING_NOTES','MORNING_CALL_DATE'
+                )
+            """)
+            rows = {r['key']: r['value'] for r in cur.fetchall()}
+        return jsonify({
+            'bias':  rows.get('MORNING_BIAS', 'none'),
+            'favor': rows.get('MORNING_FAVOR', ''),
+            'avoid': rows.get('MORNING_AVOID', ''),
+            'notes': rows.get('MORNING_NOTES', ''),
+            'date':  rows.get('MORNING_CALL_DATE', ''),
+        })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
