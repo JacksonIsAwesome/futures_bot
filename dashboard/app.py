@@ -2,6 +2,7 @@
 dashboard/app.py — Flask API + Dashboard Server for AlphaBot
 """
 
+import json
 import os
 from flask import Flask, jsonify, request, send_from_directory
 import psycopg2
@@ -132,6 +133,17 @@ def get_config():
             'MAX_OPEN_TRADES':    7,
             'MAX_POSITION_PCT':   0.20,
             'RISK_PER_TRADE':     0.02,   # fraction of capital risked per trade
+            # Sentiment
+            'SENTIMENT_ENABLED':          1,
+            'SENTIMENT_NEWS_ENABLED':     1,
+            'SENTIMENT_GAP_ENABLED':      1,
+            'SENTIMENT_VIX_ENABLED':      1,
+            'SENTIMENT_NEWS_HOURS':       6,
+            'SENTIMENT_NEWS_INFLUENCE':   0.30,
+            'SENTIMENT_VIX_REDUCE':       20.0,   # VIX above this = reduce size
+            'SENTIMENT_VIX_BLOCK':        28.0,   # VIX above this = no new entries
+            'SENTIMENT_GAP_THRESHOLD':    0.3,    # gap % that matters
+            'MORNING_CALL_ENABLED':       1,
             'ATR_STOP_MULT':      2.0,
             'ATR_TP_MULT':        4.0,
             'BREAKEVEN_ATR_MULT': 0.75,
@@ -276,7 +288,7 @@ def performance():
 
 @app.route('/api/morning')
 def morning():
-    """Return today's Opus pre-market session call results."""
+    """Full morning call data including raw prompt, response, sentiment."""
     try:
         with get_conn() as conn:
             cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
@@ -285,16 +297,82 @@ def morning():
                 FROM config_overrides
                 WHERE key IN (
                     'MORNING_BIAS','MORNING_FAVOR','MORNING_AVOID',
-                    'MORNING_NOTES','MORNING_CALL_DATE'
+                    'MORNING_NOTES','MORNING_CALL_DATE','MORNING_FULL_PROMPT',
+                    'MORNING_FULL_RESPONSE','MORNING_VIX','MORNING_VIX_ACTION',
+                    'MORNING_GAPS','MORNING_HEADLINES','MORNING_CALL_ERROR',
+                    'MORNING_SIZE_MULT'
                 )
             """)
             rows = {r['key']: r['value'] for r in cur.fetchall()}
+        # Parse JSON fields safely
+        gaps      = {}
+        headlines = {}
+        try:    gaps      = json.loads(rows.get('MORNING_GAPS', '{}'))
+        except: pass
+        try:    headlines = json.loads(rows.get('MORNING_HEADLINES', '{}'))
+        except: pass
         return jsonify({
-            'bias':  rows.get('MORNING_BIAS', 'none'),
-            'favor': rows.get('MORNING_FAVOR', ''),
-            'avoid': rows.get('MORNING_AVOID', ''),
-            'notes': rows.get('MORNING_NOTES', ''),
-            'date':  rows.get('MORNING_CALL_DATE', ''),
+            'bias':          rows.get('MORNING_BIAS', ''),
+            'favor':         rows.get('MORNING_FAVOR', ''),
+            'avoid':         rows.get('MORNING_AVOID', ''),
+            'vix_action':    rows.get('MORNING_VIX_ACTION', 'normal'),
+            'notes':         rows.get('MORNING_NOTES', ''),
+            'date':          rows.get('MORNING_CALL_DATE', ''),
+            'vix':           rows.get('MORNING_VIX', ''),
+            'size_mult':     rows.get('MORNING_SIZE_MULT', '1.0'),
+            'gaps':          gaps,
+            'headlines':     headlines,
+            'full_prompt':   rows.get('MORNING_FULL_PROMPT', ''),
+            'full_response': rows.get('MORNING_FULL_RESPONSE', ''),
+            'error':         rows.get('MORNING_CALL_ERROR', ''),
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/morning/run', methods=['POST'])
+def run_morning_call():
+    """Manually trigger the morning call."""
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO config_overrides (key, value, updated_at, updated_by)
+                VALUES ('RUN_MORNING_NOW', 'true', NOW(), 'dashboard')
+                ON CONFLICT (key) DO UPDATE SET value='true', updated_at=NOW()
+            """)
+        return jsonify({'success': True, 'message': 'Morning call queued — runs within 60s'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/sentiment')
+def sentiment():
+    """Live sentiment snapshot — VIX, gaps, headlines from this morning."""
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+            cur.execute("""
+                SELECT key, value, updated_at
+                FROM config_overrides
+                WHERE key IN (
+                    'MORNING_VIX','MORNING_GAPS','MORNING_HEADLINES',
+                    'MORNING_VIX_ACTION','MORNING_CALL_DATE'
+                )
+            """)
+            rows = {r['key']: r['value'] for r in cur.fetchall()}
+        gaps      = {}
+        headlines = {}
+        try:    gaps      = json.loads(rows.get('MORNING_GAPS', '{}'))
+        except: pass
+        try:    headlines = json.loads(rows.get('MORNING_HEADLINES', '{}'))
+        except: pass
+        return jsonify({
+            'vix':        rows.get('MORNING_VIX', ''),
+            'vix_action': rows.get('MORNING_VIX_ACTION', 'normal'),
+            'date':       rows.get('MORNING_CALL_DATE', ''),
+            'gaps':       gaps,
+            'headlines':  headlines,
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
