@@ -117,7 +117,7 @@ def get_config():
             'DYNAMIC_TP_MIN_MOMENTUM': 2,
             # ── Faster scan ────────────────────────────────────
             'FAST_SCAN_ENABLED':  1,
-            'FAST_SCAN_SCORE':    5,
+            'FAST_SCAN_SCORE':    4,
             'FAST_SCAN_INTERVAL': 20,
             # ── ADX regime filter ──────────────────────────────
             'ADX_MIN_THRESHOLD':  20.0,
@@ -241,6 +241,7 @@ def health():
 
 
 
+@app.route('/api/performance')
 def performance():
     try:
         with get_conn() as conn:
@@ -268,6 +269,29 @@ def performance():
             for s in by_symbol:
                 s['pnl'] = round(float(s['pnl']),2)
             return jsonify({'daily': daily, 'by_symbol': by_symbol})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/exits')
+def exits():
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+            cur.execute("""
+                SELECT exit_reason,
+                       COUNT(*) as count,
+                       COALESCE(SUM(pnl_usd),0) as total_pnl,
+                       COALESCE(AVG(pnl_usd),0) as avg_pnl
+                FROM trades
+                WHERE status != 'open' AND entered_at >= NOW() - INTERVAL '30 days'
+                GROUP BY exit_reason ORDER BY count DESC
+            """)
+            rows = [dict(r) for r in cur.fetchall()]
+            for r in rows:
+                r['total_pnl'] = round(float(r['total_pnl']), 2)
+                r['avg_pnl']   = round(float(r['avg_pnl']), 2)
+            return jsonify(rows)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
