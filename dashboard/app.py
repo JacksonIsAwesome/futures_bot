@@ -119,6 +119,8 @@ def get_config():
             'FAST_SCAN_ENABLED':  1,
             'FAST_SCAN_SCORE':    5,
             'FAST_SCAN_INTERVAL': 20,
+            # ── ADX regime filter ──────────────────────────────
+            'ADX_MIN_THRESHOLD':  20.0,
             # ── Direction flip ─────────────────────────────────
             'FLIP_ENABLED':        1,
             'FLIP_MIN_SIGNALS':    3,    # updated from 1
@@ -200,7 +202,45 @@ def run_meta():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/performance')
+@app.route('/api/health')
+def health():
+    """
+    Returns bot health including Claude API status.
+    The bot writes API health to config_overrides table after each call cycle.
+    """
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+            cur.execute("""
+                SELECT key, value, updated_at
+                FROM config_overrides
+                WHERE key IN ('CLAUDE_API_FAILURES', 'CLAUDE_API_TOTAL', 'CLAUDE_LAST_SUCCESS')
+            """)
+            rows = {r['key']: {'value': r['value'], 'updated_at': r['updated_at'].isoformat() if r['updated_at'] else None}
+                    for r in cur.fetchall()}
+
+        failures = int(rows.get('CLAUDE_API_FAILURES', {}).get('value', 0))
+        total    = int(rows.get('CLAUDE_API_TOTAL',    {}).get('value', 1))
+        last_ok  = rows.get('CLAUDE_LAST_SUCCESS', {}).get('updated_at')
+
+        failure_rate = round(failures / max(total, 1) * 100, 1)
+        status = "healthy" if failures < 3 else "degraded" if failures < 10 else "down"
+
+        return jsonify({
+            'claude_api': {
+                'status':            status,
+                'consecutive_fails': failures,
+                'total_calls':       total,
+                'failure_rate_pct':  failure_rate,
+                'last_success':      last_ok,
+                'using_fallback':    failures >= 3,
+            }
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+
 def performance():
     try:
         with get_conn() as conn:
