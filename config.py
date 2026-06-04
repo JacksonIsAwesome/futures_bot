@@ -1,7 +1,5 @@
 # ============================================================
 #   AlphaBot — Simulated Futures Trading Bot
-#   Trades QQQ/NVDA on Alpaca with 10x simulated leverage
-#   to replicate micro futures (MNQ/MES) behavior
 # ============================================================
 
 import os
@@ -14,7 +12,7 @@ ALPACA_API_KEY    = os.environ.get("ALPACA_API_KEY", "")
 ALPACA_SECRET_KEY = os.environ.get("ALPACA_SECRET_KEY", "")
 
 # ── What we trade ────────────────────────────────────────────
-SYMBOLS = ["QQQ", "NVDA", "TQQQ", "SPY"]
+SYMBOLS = ["QQQ", "NVDA", "TQQQ", "SPY", "SOXL", "AMD", "TSLA"]
 PRIMARY  = "QQQ"
 
 # ── Simulated futures leverage ────────────────────────────────
@@ -25,17 +23,15 @@ STARTING_CAPITAL     = 2000.0
 MAX_DAILY_LOSS_PCT   = 0.30
 MAX_OPEN_TRADES      = 7
 MAX_POSITION_PCT     = 0.20
+RISK_PER_TRADE       = 0.02   # fraction of capital to risk per trade (2%) — DB overridable
 LOSS_COOLDOWN_MINS   = 20
 MIN_RR               = 1.0
 
-# ── Strategy thresholds (meta brain can adjust) ───────────────
+# ── Strategy thresholds ───────────────────────────────────────
 EMA_FAST             = 9
 EMA_SLOW             = 21
 VWAP_CONFIRM         = True
 VOLUME_SPIKE_MULT    = 1.5
-ROC_PERIOD           = 3
-ROC_MIN_LONG         = 0.08
-ROC_MIN_SHORT        = -0.08
 VWAP_DEV_MULT        = 1.5
 VOL_ACCEL_MULT       = 1.8
 RSI_PERIOD           = 14
@@ -45,12 +41,10 @@ MIN_SIGNAL_SCORE     = 3
 
 # ── Momentum gate ─────────────────────────────────────────────
 MOMENTUM_GATE_ENABLED       = 1
-MOMENTUM_GATE_MIN           = 2
-MACD_FAST                   = 12
-MACD_SLOW                   = 26
+MOMENTUM_GATE_MIN           = 1
+MACD_FAST                   = 5
+MACD_SLOW                   = 13
 MACD_SIGNAL_PERIOD          = 9
-CANDLE_CONSISTENCY_LOOKBACK = 3
-CANDLE_CONSISTENCY_MIN      = 2
 
 # ── Multi-timeframe ───────────────────────────────────────────
 MTF_FILTER_ENABLED          = 1
@@ -58,7 +52,7 @@ MTF_EMA_PERIOD              = 21
 
 # ── Session aggression ────────────────────────────────────────
 PRIME_BASE_MIN              = 3
-REGULAR_BASE_MIN            = 4
+REGULAR_BASE_MIN            = 3
 PRIME_END_HOUR              = 11
 
 # ── Dynamic TP ────────────────────────────────────────────────
@@ -68,18 +62,17 @@ DYNAMIC_TP_MIN_MOMENTUM     = 2
 
 # ── Faster scan ───────────────────────────────────────────────
 FAST_SCAN_ENABLED           = 1
-FAST_SCAN_SCORE             = 5
+FAST_SCAN_SCORE             = 4
 FAST_SCAN_INTERVAL          = 20
 
-# ── Direction flip ────────────────────────────────────────────
-# ── ADX regime filter ─────────────────────────────────────────────────────────
-ADX_MIN_THRESHOLD           = 20.0  # ADX below this = ranging market, block all entries
+# ── ADX regime filter ─────────────────────────────────────────
+ADX_MIN_THRESHOLD           = 20.0
 
-# ── Direction flip ─────────────────────────────────────────────────────────────
+# ── Direction flip ─────────────────────────────────────────────
 FLIP_ENABLED                = 1
-FLIP_MIN_SIGNALS            = 3    # was 1 — now requires 3 confirming signals before re-entry
-FLIP_BASE_SCORE_MIN         = 4    # was 3 — higher bar to trigger a flip
-FLIP_COOLDOWN_SEC           = 600  # NEW — 10 min minimum between flips per symbol
+FLIP_MIN_SIGNALS            = 3
+FLIP_BASE_SCORE_MIN         = 4
+FLIP_COOLDOWN_SEC           = 600
 
 # ── Risk / stops ─────────────────────────────────────────────
 ATR_PERIOD           = 14
@@ -87,7 +80,12 @@ ATR_STOP_MULT        = 2.0
 ATR_TP_MULT          = 4.0
 TRAIL_AFTER_BE       = True
 BREAKEVEN_ATR_MULT   = 0.75
-TRAIL_STEP           = 0.5    # trailing stop distance in ATR multiples (after breakeven)
+TRAIL_STEP           = 1.0    # widened from 0.5 — gives winners more room
+
+# ── Opus morning call ─────────────────────────────────────────
+MORNING_CALL_ENABLED = 1      # run Opus 4.8 at market open for symbol bias
+MORNING_CALL_HOUR    = 9      # ET hour to run (9 = just before open)
+MORNING_CALL_MINUTE  = 25     # at 9:25am ET
 
 # ── Stream settings ───────────────────────────────────────────
 STREAM_STALE_SECONDS = 120
@@ -97,16 +95,13 @@ MAX_BAR_AGE_MINUTES  = 20
 SCAN_INTERVAL_SEC    = 5
 MARKET_OPEN          = "09:30"
 MARKET_CLOSE         = "16:00"
-PRIME_OPEN_END       = "11:30"
-PRIME_CLOSE_START    = "13:30"
-TRADE_PRIME_ONLY     = False
-TRADING_PAUSED       = 0      # set to 1 to pause new entries (existing trades still managed)
-MIN_HOLD_SECONDS         = 60   # min seconds after entry before stops can fire
-MORNING_BLACKOUT_ENABLED = 0    # toggle from dashboard
-MORNING_BLACKOUT_MINS    = 10   # minutes to block after 9:30 AM open
+TRADING_PAUSED       = 0
+MIN_HOLD_SECONDS         = 60
+MORNING_BLACKOUT_ENABLED = 0
+MORNING_BLACKOUT_MINS    = 10
 
 # ── Meta Brain ───────────────────────────────────────────────
-META_REVIEW_HOUR     = 21  # 5pm ET during EDT (UTC-4)
+META_REVIEW_HOUR     = 21
 META_LOOKBACK_DAYS   = 7
 META_MIN_TRADES      = 5
 META_ADJUST_STEP     = 0.1
