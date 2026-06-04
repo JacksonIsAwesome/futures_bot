@@ -148,6 +148,7 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
   <div class="tab" onclick="switchTab(event,'symbols')"><i class="ti ti-antenna"></i> Symbols</div>
   <div class="tab" onclick="switchTab(event,'signals')"><i class="ti ti-radar"></i> Signals</div>
   <div class="tab" onclick="switchTab(event,'risk')"><i class="ti ti-shield-lock"></i> Risk</div>
+  <div class="tab" onclick="switchTab(event,'sentiment')"><i class="ti ti-news"></i> Sentiment</div>
   <div class="tab" onclick="switchTab(event,'controls')"><i class="ti ti-adjustments"></i> Controls</div>
   <div class="tab" onclick="switchTab(event,'performance')"><i class="ti ti-trending-up"></i> Performance</div>
   <div class="tab" onclick="switchTab(event,'meta')"><i class="ti ti-brain"></i> Meta Brain</div>
@@ -300,6 +301,119 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
       </table>
     </div>
   </div>
+</div>
+
+<!-- SENTIMENT -->
+<div id="tab-sentiment" class="content">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+    <span style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-muted)">Pre-market data pulled at 9:25am ET — feeds Opus morning call</span>
+    <div style="display:flex;gap:8px">
+      <button class="refresh-btn" onclick="loadSentiment()"><i class="ti ti-refresh"></i> Refresh</button>
+      <button class="refresh-btn" onclick="runMorningCall()" id="morning-run-btn" style="border-color:var(--purple);color:var(--purple)"><i class="ti ti-brain"></i> Run Now</button>
+    </div>
+  </div>
+
+  <!-- VIX + gap summary cards -->
+  <div class="stats-grid" style="grid-template-columns:repeat(5,1fr);margin-bottom:14px">
+    <div class="stat-card"><div class="stat-label">VIX</div><div class="stat-value" id="sent-vix">—</div><div class="stat-sub" id="sent-vix-regime">checking...</div></div>
+    <div class="stat-card"><div class="stat-label">VIX Action</div><div class="stat-value" id="sent-vix-action">—</div><div class="stat-sub">from morning call</div></div>
+    <div class="stat-card"><div class="stat-label">Overall Bias</div><div class="stat-value purple" id="sent-bias">—</div><div class="stat-sub" id="sent-bias-date">no call yet</div></div>
+    <div class="stat-card"><div class="stat-label">Favor</div><div class="stat-value green" id="sent-favor" style="font-size:13px">—</div><div class="stat-sub">1.5x size</div></div>
+    <div class="stat-card"><div class="stat-label">Avoid</div><div class="stat-value red" id="sent-avoid" style="font-size:13px">—</div><div class="stat-sub">0.5x size</div></div>
+  </div>
+
+  <!-- Pre-market gaps -->
+  <div class="panel">
+    <div class="panel-header"><div class="panel-title"><i class="ti ti-chart-bar"></i> Pre-Market Gaps</div></div>
+    <div class="panel-body" id="sent-gaps-body">
+      <div class="empty-state">No gap data yet</div>
+    </div>
+  </div>
+
+  <!-- Headlines -->
+  <div class="panel">
+    <div class="panel-header"><div class="panel-title"><i class="ti ti-news"></i> News Headlines (last 6h)</div></div>
+    <div class="panel-body" id="sent-headlines-body">
+      <div class="empty-state">No headlines yet</div>
+    </div>
+  </div>
+
+  <!-- Full Opus morning call -->
+  <div class="panel" style="border-color:rgba(139,92,246,0.3)">
+    <div class="panel-header">
+      <div class="panel-title"><i class="ti ti-brain"></i> Opus 4.8 Morning Call — Full Output</div>
+      <div style="font-size:10px;color:var(--text-muted)" id="sent-call-date">—</div>
+    </div>
+    <div class="panel-body">
+      <div class="section-label" style="margin-top:0"><i class="ti ti-notes"></i> Opus Notes</div>
+      <div id="sent-notes" style="font-size:12px;color:var(--text-secondary);margin-bottom:16px;line-height:1.7">—</div>
+      <div id="sent-error" style="color:var(--red);font-size:11px;margin-bottom:12px;display:none"></div>
+      <div class="section-label"><i class="ti ti-send"></i> Full Prompt Sent</div>
+      <pre id="sent-full-prompt" style="font-size:10px;color:var(--text-muted);white-space:pre-wrap;word-break:break-word;background:var(--navy-darkest);border:1px solid var(--border);border-radius:6px;padding:12px;max-height:300px;overflow-y:auto;line-height:1.6">—</pre>
+      <div class="section-label" style="margin-top:14px"><i class="ti ti-message-dots"></i> Full Raw Response</div>
+      <pre id="sent-full-response" style="font-size:10px;color:var(--cyan);white-space:pre-wrap;word-break:break-word;background:var(--navy-darkest);border:1px solid var(--border);border-radius:6px;padding:12px;max-height:200px;overflow-y:auto;line-height:1.6">—</pre>
+    </div>
+  </div>
+
+  <!-- Sentiment controls inline -->
+  <div class="section-label"><i class="ti ti-adjustments"></i> Sentiment Controls</div>
+  <div class="ctrls-row">
+    <div class="ctrl-group">
+      <h3><i class="ti ti-toggle-left"></i> Master Switches</h3>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">Sentiment system enabled</div><div class="ctrl-hint">Master off = pure technicals, no news/VIX/gap</div></div>
+        <label class="toggle-switch"><input type="checkbox" id="ctrl-SENTIMENT_ENABLED" onchange="toggleBool(this,'SENTIMENT_ENABLED'); dimSection('sent-sub-controls',!this.checked)"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+      </div>
+      <div id="sent-sub-controls">
+        <div class="ctrl-row">
+          <div><div class="ctrl-label">Alpaca news headlines</div><div class="ctrl-hint">Pull per-symbol headlines from Alpaca news API</div></div>
+          <label class="toggle-switch"><input type="checkbox" id="ctrl-SENTIMENT_NEWS_ENABLED" onchange="toggleBool(this,'SENTIMENT_NEWS_ENABLED')"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+        </div>
+        <div class="ctrl-row">
+          <div><div class="ctrl-label">Pre-market gap %</div><div class="ctrl-hint">Compare pre-market vs prior close per symbol</div></div>
+          <label class="toggle-switch"><input type="checkbox" id="ctrl-SENTIMENT_GAP_ENABLED" onchange="toggleBool(this,'SENTIMENT_GAP_ENABLED')"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+        </div>
+        <div class="ctrl-row">
+          <div><div class="ctrl-label">VIX level</div><div class="ctrl-hint">Pull VIX from Yahoo Finance — affects size mult</div></div>
+          <label class="toggle-switch"><input type="checkbox" id="ctrl-SENTIMENT_VIX_ENABLED" onchange="toggleBool(this,'SENTIMENT_VIX_ENABLED')"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+        </div>
+        <div class="ctrl-row">
+          <div><div class="ctrl-label">Morning call (Opus 4.8)</div><div class="ctrl-hint">Run Opus pre-market analysis at 9:25am ET</div></div>
+          <label class="toggle-switch"><input type="checkbox" id="ctrl-MORNING_CALL_ENABLED" onchange="toggleBool(this,'MORNING_CALL_ENABLED')"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+        </div>
+      </div>
+    </div>
+    <div class="ctrl-group">
+      <h3><i class="ti ti-sliders"></i> Sentiment Parameters</h3>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">News lookback (hours)</div><div class="ctrl-hint">How far back to pull headlines</div></div>
+        <input type="range" min="1" max="24" step="1" id="ctrl-SENTIMENT_NEWS_HOURS" oninput="updateVal(this,'h')">
+        <div class="ctrl-val" id="val-SENTIMENT_NEWS_HOURS">6h</div>
+      </div>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">News influence weight</div><div class="ctrl-hint">How much Opus weights news vs technicals</div></div>
+        <input type="range" min="10" max="50" step="5" id="ctrl-SENTIMENT_NEWS_INFLUENCE_pct" oninput="updateSentInfluence(this)">
+        <div class="ctrl-val" id="val-SENTIMENT_NEWS_INFLUENCE">30%</div>
+      </div>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">Gap threshold %</div><div class="ctrl-hint">Min gap % that Opus considers significant</div></div>
+        <input type="range" min="0.1" max="1.5" step="0.1" id="ctrl-SENTIMENT_GAP_THRESHOLD" oninput="updateVal(this,'%')">
+        <div class="ctrl-val" id="val-SENTIMENT_GAP_THRESHOLD">0.3%</div>
+      </div>
+      <div class="divider"></div>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">VIX reduce-size level</div><div class="ctrl-hint">VIX above this → 0.75x position size</div></div>
+        <input type="range" min="15" max="30" step="1" id="ctrl-SENTIMENT_VIX_REDUCE" oninput="updateVal(this)">
+        <div class="ctrl-val" id="val-SENTIMENT_VIX_REDUCE">20</div>
+      </div>
+      <div class="ctrl-row">
+        <div><div class="ctrl-label">VIX block-entries level</div><div class="ctrl-hint">VIX above this → no new entries at all</div></div>
+        <input type="range" min="20" max="45" step="1" id="ctrl-SENTIMENT_VIX_BLOCK" oninput="updateVal(this)">
+        <div class="ctrl-val" id="val-SENTIMENT_VIX_BLOCK">28</div>
+      </div>
+    </div>
+  </div>
+  <button class="save-btn" onclick="saveConfig()" style="margin-top:4px">Save Sentiment Settings</button>
 </div>
 
 <!-- CONTROLS -->
@@ -685,6 +799,7 @@ function switchTab(e,name){
   if(name==='symbols')     loadSymbols();
   if(name==='signals')     loadSignals();
   if(name==='risk')        loadRisk();
+  if(name==='sentiment')   loadSentiment();
   if(name==='controls')    loadConfig();
   if(name==='performance') loadPerformance();
   if(name==='meta')        loadMeta();
@@ -1033,6 +1148,7 @@ async function loadConfig(){
     configState['BLACKOUT_START']=cfg.BLACKOUT_START??11;
     configState['BLACKOUT_END']=cfg.BLACKOUT_END??13;
     await loadAPIHealth();
+    await loadSentimentConfig();  // also load sentiment controls when controls tab opens
   }catch(e){console.error(e);}
 }
 
@@ -1173,23 +1289,155 @@ async function loadMorningCall(){
   try{
     const d=await fetch('/api/morning').then(r=>r.json());
     if(d.error)return;
-    const biasEl=document.getElementById('morning-bias-val');
-    const biasD=document.getElementById('morning-bias-detail');
-    const favorD=document.getElementById('morning-favor-detail');
-    const avoidD=document.getElementById('morning-avoid-detail');
-    const notesD=document.getElementById('morning-notes-detail');
-    const dateEl=document.getElementById('morning-call-date');
     const bias=d.bias||'none';
     const color=bias==='long'?'var(--green)':bias==='short'?'var(--red)':'var(--text-muted)';
-    if(biasEl){biasEl.textContent=bias.toUpperCase();biasEl.style.color=color;}
-    if(biasD){biasD.textContent=bias.toUpperCase();biasD.style.color=color;}
-    if(favorD)favorD.textContent=d.favor||'none';
-    if(avoidD)avoidD.textContent=d.avoid||'none';
-    if(notesD)notesD.textContent=d.notes||'No call yet';
-    if(dateEl)dateEl.textContent=d.date||'—';
-    const subEl=document.getElementById('morning-favor-sub');
-    if(subEl)subEl.textContent=d.favor?`favor: ${d.favor}`:'no call yet';
+    const set=(id,val)=>{ const el=document.getElementById(id); if(el)el.textContent=val; };
+    const setColor=(id,c)=>{ const el=document.getElementById(id); if(el)el.style.color=c; };
+    set('morning-bias-val', bias.toUpperCase()); setColor('morning-bias-val',color);
+    set('morning-favor-sub', d.favor?`favor: ${d.favor}`:'no call yet');
+    // overview panel
+    set('morning-bias-detail', bias.toUpperCase()); setColor('morning-bias-detail',color);
+    set('morning-favor-detail', d.favor||'none');
+    set('morning-avoid-detail', d.avoid||'none');
+    set('morning-notes-detail', d.notes||'No call yet — runs at 9:25am ET');
+    set('morning-call-date', d.date||'—');
   }catch(e){}
+}
+
+async function loadSentiment(){
+  try{
+    const d=await fetch('/api/morning').then(r=>r.json());
+    if(d.error)return;
+
+    // Stat cards
+    const vix=parseFloat(d.vix)||null;
+    const vixEl=document.getElementById('sent-vix');
+    const vixReg=document.getElementById('sent-vix-regime');
+    if(vixEl){
+      vixEl.textContent=vix?vix.toFixed(1):'—';
+      vixEl.style.color=!vix?'var(--text-muted)':vix<15?'var(--green)':vix<20?'var(--cyan)':vix<25?'var(--amber)':'var(--red)';
+    }
+    if(vixReg){
+      const r=!vix?'unknown':vix<15?'LOW':vix<20?'NORMAL':vix<25?'ELEVATED':'FEAR';
+      vixReg.textContent=r;
+    }
+    const va=d.vix_action||'normal';
+    const vaEl=document.getElementById('sent-vix-action');
+    if(vaEl){
+      vaEl.textContent=va.replace('_',' ').toUpperCase();
+      vaEl.style.color=va==='no_new_entries'?'var(--red)':va==='reduce_size'?'var(--amber)':'var(--green)';
+    }
+    const bias=d.bias||'none';
+    const biasEl=document.getElementById('sent-bias');
+    if(biasEl){biasEl.textContent=bias.toUpperCase();biasEl.style.color=bias==='long'?'var(--green)':bias==='short'?'var(--red)':'var(--text-muted)';}
+    const fe=document.getElementById('sent-favor'); if(fe)fe.textContent=d.favor||'none';
+    const ae=document.getElementById('sent-avoid'); if(ae)ae.textContent=d.avoid||'none';
+    const de=document.getElementById('sent-bias-date'); if(de)de.textContent=d.date||'—';
+
+    // Pre-market gaps
+    const gapsBody=document.getElementById('sent-gaps-body');
+    if(gapsBody&&d.gaps&&Object.keys(d.gaps).length){
+      const syms=Object.keys(d.gaps).sort((a,b)=>Math.abs(d.gaps[b])-Math.abs(d.gaps[a]));
+      gapsBody.innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px">'
+        +syms.map(sym=>{
+          const g=d.gaps[sym];
+          const color=g>0.5?'var(--green)':g<-0.5?'var(--red)':g>0.2?'var(--cyan)':g<-0.2?'var(--amber)':'var(--text-muted)';
+          const arrow=g>0?'↑':g<0?'↓':'→';
+          return`<div class="sym-stat">
+            <div class="sym-stat-label">${sym}</div>
+            <div class="sym-stat-val" style="color:${color};font-size:15px">${arrow}${Math.abs(g).toFixed(2)}%</div>
+          </div>`;
+        }).join('')+'</div>';
+    } else if(gapsBody){
+      gapsBody.innerHTML='<div class="empty-state">No gap data yet</div>';
+    }
+
+    // Headlines
+    const hlBody=document.getElementById('sent-headlines-body');
+    if(hlBody&&d.headlines&&Object.keys(d.headlines).length){
+      const entries=Object.entries(d.headlines).filter(([,v])=>v&&v.length);
+      if(entries.length){
+        hlBody.innerHTML=entries.map(([sym,headlines])=>`
+          <div style="margin-bottom:12px">
+            <div style="font-size:10px;font-weight:700;color:var(--cyan);letter-spacing:0.08em;margin-bottom:5px">${sym}</div>
+            ${headlines.map(h=>`<div style="font-size:11px;color:var(--text-secondary);padding:4px 0;border-bottom:1px solid var(--border);line-height:1.5">• ${h}</div>`).join('')}
+          </div>`).join('');
+      } else {
+        hlBody.innerHTML='<div class="empty-state">No headlines found for these symbols</div>';
+      }
+    } else if(hlBody){
+      hlBody.innerHTML='<div class="empty-state">No headlines yet</div>';
+    }
+
+    // Full call details
+    const notesEl=document.getElementById('sent-notes'); if(notesEl)notesEl.textContent=d.notes||'—';
+    const dateEl=document.getElementById('sent-call-date'); if(dateEl)dateEl.textContent=d.date||'—';
+    const promptEl=document.getElementById('sent-full-prompt'); if(promptEl)promptEl.textContent=d.full_prompt||'—';
+    const respEl=document.getElementById('sent-full-response'); if(respEl)respEl.textContent=d.full_response||'—';
+    const errEl=document.getElementById('sent-error');
+    if(errEl){
+      if(d.error&&d.error.length){errEl.textContent='Error: '+d.error;errEl.style.display='block';}
+      else errEl.style.display='none';
+    }
+
+    // Load sentiment config values
+    await loadSentimentConfig();
+  }catch(e){console.error(e);}
+}
+
+async function loadSentimentConfig(){
+  try{
+    const cfg=await fetch('/api/config').then(r=>r.json());
+    const tog=(key,def=1)=>{
+      const el=document.getElementById('ctrl-'+key);
+      if(el)el.checked=parseInt(cfg[key]??def)===1;
+      configState[key]=parseInt(cfg[key]??def);
+    };
+    const sl=(key,def,suffix)=>{
+      const el=document.getElementById('ctrl-'+key);
+      const ve=document.getElementById('val-'+key);
+      const val=cfg[key]??def;
+      if(el)el.value=val;
+      if(ve)ve.textContent=val+(suffix||'');
+      configState[key]=val;
+    };
+    const sentOn=parseInt(cfg.SENTIMENT_ENABLED??1);
+    tog('SENTIMENT_ENABLED',1);
+    tog('SENTIMENT_NEWS_ENABLED',1);
+    tog('SENTIMENT_GAP_ENABLED',1);
+    tog('SENTIMENT_VIX_ENABLED',1);
+    tog('MORNING_CALL_ENABLED',1);
+    dimSection('sent-sub-controls',sentOn===0);
+    sl('SENTIMENT_NEWS_HOURS',6,'h');
+    sl('SENTIMENT_GAP_THRESHOLD',0.3,'%');
+    sl('SENTIMENT_VIX_REDUCE',20);
+    sl('SENTIMENT_VIX_BLOCK',28);
+    // News influence %
+    const inf=Math.round((cfg.SENTIMENT_NEWS_INFLUENCE??0.30)*100);
+    const infEl=document.getElementById('ctrl-SENTIMENT_NEWS_INFLUENCE_pct');
+    if(infEl)infEl.value=inf;
+    document.getElementById('val-SENTIMENT_NEWS_INFLUENCE').textContent=inf+'%';
+    configState['SENTIMENT_NEWS_INFLUENCE']=cfg.SENTIMENT_NEWS_INFLUENCE??0.30;
+  }catch(e){}
+}
+
+function updateSentInfluence(el){
+  const pct=parseInt(el.value);
+  configState['SENTIMENT_NEWS_INFLUENCE']=pct/100;
+  document.getElementById('val-SENTIMENT_NEWS_INFLUENCE').textContent=pct+'%';
+}
+
+async function runMorningCall(){
+  const btn=document.getElementById('morning-run-btn');
+  btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Running...';
+  try{
+    const d=await fetch('/api/morning/run',{method:'POST'}).then(r=>r.json());
+    if(d.success){
+      setTimeout(async()=>{await loadSentiment();btn.disabled=false;btn.innerHTML='<i class="ti ti-brain"></i> Run Now';},8000);
+    } else {
+      btn.innerHTML='<i class="ti ti-x"></i> Error';btn.disabled=false;
+    }
+  }catch(e){btn.innerHTML='<i class="ti ti-x"></i> Error';btn.disabled=false;}
 }
 
 marketStatus();
@@ -1198,7 +1446,8 @@ loadAPIHealth();
 loadMorningCall();
 setInterval(loadOverview,30000);
 setInterval(loadAPIHealth,60000);
-setInterval(loadMorningCall,300000); // refresh every 5 min
+setInterval(loadMorningCall,300000);
+setInterval(loadSentiment,300000);
 setInterval(marketStatus,30000);
 setInterval(loadLogs,60000);
 </script>
