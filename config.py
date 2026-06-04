@@ -72,6 +72,10 @@ FAST_SCAN_SCORE             = 5
 FAST_SCAN_INTERVAL          = 20
 
 # ── Direction flip ────────────────────────────────────────────
+# ── ADX regime filter ─────────────────────────────────────────────────────────
+ADX_MIN_THRESHOLD           = 20.0  # ADX below this = ranging market, block all entries
+
+# ── Direction flip ─────────────────────────────────────────────────────────────
 FLIP_ENABLED                = 1
 FLIP_MIN_SIGNALS            = 3    # was 1 — now requires 3 confirming signals before re-entry
 FLIP_BASE_SCORE_MIN         = 4    # was 3 — higher bar to trigger a flip
