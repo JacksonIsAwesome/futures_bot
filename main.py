@@ -10,8 +10,10 @@ import pytz
 
 from config import (
     SYMBOLS, STARTING_CAPITAL, SCAN_INTERVAL_SEC,
-    MARKET_OPEN, MARKET_CLOSE, META_REVIEW_HOUR, FLIP_COOLDOWN_SEC
+    MARKET_OPEN, MARKET_CLOSE, META_REVIEW_HOUR, FLIP_COOLDOWN_SEC,
+    MORNING_CALL_ENABLED
 )
+from meta.morning_call import run as run_morning_call
 from core.database      import init_db, get_open_trades, get_open_trade_for_symbol, upsert_daily_summary, get_config_override
 from core.data          import DataFetcher
 from core.stream        import PriceStream
@@ -427,9 +429,23 @@ class AlphaBot:
 
     # ── Run ───────────────────────────────────────────────────
 
+    def _morning_call(self):
+        """Run Opus 4.8 pre-market symbol bias call at 9:25am ET."""
+        enabled = int(get_config_override("MORNING_CALL_ENABLED", MORNING_CALL_ENABLED))
+        if not enabled:
+            return
+        # Pass current stream cache so Opus has live pre-market data
+        cache = {}
+        for sym in SYMBOLS:
+            c = self.stream.get_cache(sym)
+            if c:
+                cache[sym] = c
+        run_morning_call(stream_cache=cache)
+
     def run(self):
         schedule.every().day.at(f"{META_REVIEW_HOUR:02d}:00").do(self._daily_review)
         schedule.every().day.at("13:25").do(self._reseed_bars)
+        schedule.every().day.at("13:25").do(self._morning_call)  # 9:25am ET = 13:25 UTC
 
         while True:
             try:
