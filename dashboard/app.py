@@ -219,7 +219,7 @@ def run_meta():
 def health():
     """
     Returns bot health including Claude API status.
-    The bot writes API health to config_overrides table after each call cycle.
+    Tracks both Haiku (per-signal direction calls) and Opus (morning call).
     """
     try:
         with get_conn() as conn:
@@ -227,17 +227,29 @@ def health():
             cur.execute("""
                 SELECT key, value, updated_at
                 FROM config_overrides
-                WHERE key IN ('CLAUDE_API_FAILURES', 'CLAUDE_API_TOTAL', 'CLAUDE_LAST_SUCCESS')
+                WHERE key IN (
+                    'CLAUDE_API_FAILURES', 'CLAUDE_API_TOTAL', 'CLAUDE_LAST_SUCCESS',
+                    'MORNING_CALL_ERROR', 'MORNING_CALL_DATE', 'MORNING_FULL_RESPONSE',
+                    'MORNING_BIAS'
+                )
             """)
             rows = {r['key']: {'value': r['value'], 'updated_at': r['updated_at'].isoformat() if r['updated_at'] else None}
                     for r in cur.fetchall()}
 
+        # Haiku direction API health
         failures = int(rows.get('CLAUDE_API_FAILURES', {}).get('value', 0))
         total    = int(rows.get('CLAUDE_API_TOTAL',    {}).get('value', 1))
         last_ok  = rows.get('CLAUDE_LAST_SUCCESS', {}).get('updated_at')
-
         failure_rate = round(failures / max(total, 1) * 100, 1)
         status = "healthy" if failures < 3 else "degraded" if failures < 10 else "down"
+
+        # Opus morning call health
+        morning_error    = rows.get('MORNING_CALL_ERROR', {}).get('value', '')
+        morning_date     = rows.get('MORNING_CALL_DATE',  {}).get('value', '')
+        morning_ran      = bool(rows.get('MORNING_FULL_RESPONSE', {}).get('value', ''))
+        morning_bias     = rows.get('MORNING_BIAS', {}).get('value', '')
+        morning_ok       = morning_ran and not morning_error
+        morning_status   = 'ok' if morning_ok else ('error' if morning_error else 'not_run')
 
         return jsonify({
             'claude_api': {
@@ -247,6 +259,13 @@ def health():
                 'failure_rate_pct':  failure_rate,
                 'last_success':      last_ok,
                 'using_fallback':    failures >= 3,
+            },
+            'opus_morning': {
+                'status':   morning_status,
+                'date':     morning_date,
+                'bias':     morning_bias,
+                'error':    morning_error or '',
+                'ran_today': morning_ok,
             }
         })
     except Exception as e:
