@@ -57,12 +57,14 @@ def _write_to_db(results: dict):
         conn = psycopg2.connect(DATABASE_URL)
         cur  = conn.cursor()
         for key, val in results.items():
+            # Cast value to TEXT explicitly — bypasses VARCHAR(255) limit
+            # if the column was created with a length constraint.
             cur.execute("""
                 INSERT INTO config_overrides (key, value, updated_at, updated_by)
-                VALUES (%s, %s, NOW(), 'morning_call')
+                VALUES (%s, %s::text, NOW(), 'morning_call')
                 ON CONFLICT (key) DO UPDATE
-                SET value=EXCLUDED.value, updated_at=NOW(), updated_by='morning_call'
-            """, (key, str(val)[:4000]))  # cap at 4000 chars for long prompts
+                SET value=EXCLUDED.value::text, updated_at=NOW(), updated_by='morning_call'
+            """, (key, str(val)[:8000]))  # cap at 8000 chars
         conn.commit()
         conn.close()
         log.info(f"[MORNING] Wrote {len(results)} keys to DB")
