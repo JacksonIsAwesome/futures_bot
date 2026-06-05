@@ -136,8 +136,11 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
 <div class="header">
   <div class="logo"><div class="logo-dot"></div>ALPHABOT <span style="font-size:10px;color:var(--text-muted);font-weight:400;margin-left:4px">v5</span></div>
   <div class="header-right">
-    <div class="api-badge healthy" id="api-badge" onclick="switchTabDirect('risk')" title="Claude API status — click for details">
-      <i class="ti ti-brain"></i><span id="api-status-text">CLAUDE OK</span>
+    <div class="api-badge healthy" id="api-badge" onclick="switchTabDirect('risk')" title="Haiku direction API — click for details">
+      <i class="ti ti-brain"></i><span id="api-status-text">HAIKU OK</span>
+    </div>
+    <div class="api-badge healthy" id="opus-badge" onclick="switchTab(event,'sentiment')" title="Opus morning call status — click for Sentiment tab">
+      <i class="ti ti-stars"></i><span id="opus-status-text">OPUS —</span>
     </div>
     <div class="status-badge"><div class="status-dot"></div><span id="market-status">CHECKING...</span></div>
     <span id="last-update" style="color:var(--text-muted);font-size:10px">—</span>
@@ -857,7 +860,25 @@ async function loadAPIHealth(){
     const badge=document.getElementById('api-badge');
     const text=document.getElementById('api-status-text');
     badge.className='api-badge '+(api.using_fallback?'fallback':api.status);
-    text.textContent=api.using_fallback?'FALLBACK':api.status==='healthy'?'CLAUDE OK':'DEGRADED';
+    text.textContent=api.using_fallback?'FALLBACK':api.status==='healthy'?'HAIKU OK':'DEGRADED';
+
+    // Opus morning call badge
+    const opus=d.opus_morning;
+    const opusBadge=document.getElementById('opus-badge');
+    const opusText=document.getElementById('opus-status-text');
+    if(opusBadge&&opusText&&opus){
+      if(opus.status==='ok'){
+        opusBadge.className='api-badge healthy';
+        opusText.textContent=`OPUS ${opus.bias?opus.bias.toUpperCase():'OK'}`;
+      } else if(opus.status==='error'){
+        opusBadge.className='api-badge down';
+        opusText.textContent='OPUS ERR';
+        opusBadge.title='Opus error: '+(opus.error||'unknown');
+      } else {
+        opusBadge.className='api-badge degraded';
+        opusText.textContent='OPUS —';
+      }
+    }
     const sv=document.getElementById('api-stat-val');
     const ss=document.getElementById('api-stat-sub');
     sv.textContent=api.using_fallback?'FALLBACK':api.status.toUpperCase();
