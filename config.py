@@ -42,6 +42,7 @@ MIN_SIGNAL_SCORE     = 3
 # ── Momentum gate ─────────────────────────────────────────────
 MOMENTUM_GATE_ENABLED       = 1
 MOMENTUM_GATE_MIN           = 1
+ROC_PERIOD                  = 10   # legacy stub — ROC removed from strategy but brain.py still refs it
 MACD_FAST                   = 5
 MACD_SLOW                   = 13
 MACD_SIGNAL_PERIOD          = 9
