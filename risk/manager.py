@@ -197,8 +197,11 @@ class RiskManager:
         max_position_value = capital * max_pct
         qty_by_size        = max_position_value / price
         qty = min(qty_by_risk, qty_by_size)
+        # Apply a 1% buffer so we never hit Alpaca's "insufficient qty" 403
+        # (fractional leftovers from prior trades can cause available < requested)
+        qty = qty * 0.99
         if signal.direction == "short":
-            qty = max(int(qty), 1)
+            qty = max(int(qty), 1)   # floor for shorts — Alpaca requires whole shares for short sells
         else:
             qty = max(round(qty, 2), 0.01)
         log.info(
