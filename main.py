@@ -53,7 +53,7 @@ class AlphaBot:
 
         self._last_slow         = {}
         self._last_exit         = {}
-        self._last_flip         = {}   # symbol -> timestamp of last flip exit
+        self._last_flip         = {}
         self._flip_direction    = {}
         self._flip_signal_count = {}
         self._fast_scan_until   = {}
@@ -108,7 +108,6 @@ class AlphaBot:
         return now >= eod
 
     def _is_blackout(self) -> bool:
-        """Dead-zone blackout — blocks a configurable hour window mid-day."""
         enabled = int(get_config_override("BLACKOUT_ENABLED", 0))
         if not enabled:
             return False
@@ -121,9 +120,6 @@ class AlphaBot:
         return False
 
     def _is_morning_blackout(self) -> bool:
-        """
-        Morning open blackout — blocks the first N minutes of the session.
-        """
         enabled = int(get_config_override("MORNING_BLACKOUT_ENABLED", 0))
         if not enabled:
             return False
@@ -191,18 +187,15 @@ class AlphaBot:
                 log.warning(f"[DATA] {symbol} stale — no ticks yet. Skipping.")
             return
 
-        # ── Blackout gates ────────────────────────────────────
         if self._is_morning_blackout():
             return
         if self._is_blackout():
             return
 
-        # ── Pause gate ────────────────────────────────────────
         if int(get_config_override("TRADING_PAUSED", 0)):
             log.debug(f"[MAIN] {symbol} — trading paused, skipping entry")
             return
 
-        # ── Feed volume tracker with accumulated current-candle volume ──
         candle_minute = self.stream.get_candle_minute(symbol)
         if candle_minute is not None:
             cur_vol = self.stream.get_current_candle_volume(symbol)
@@ -218,14 +211,12 @@ class AlphaBot:
         if signal is None or signal.direction is None:
             return
 
-        # ── Activate fast scan on strong signals ──────────────
         fast_enabled   = int(get_config_override("FAST_SCAN_ENABLED",   getattr(config, "FAST_SCAN_ENABLED",   1)))
         fast_threshold = int(get_config_override("FAST_SCAN_SCORE",     getattr(config, "FAST_SCAN_SCORE",     5)))
         if fast_enabled and signal.score >= fast_threshold:
             self._fast_scan_until[symbol] = time.time() + 300
             log.debug(f"[MAIN] {symbol} fast scan activated (score={signal.score})")
 
-        # ── Direction flip detection ──────────────────────────
         flip_enabled  = int(get_config_override("FLIP_ENABLED", getattr(config, "FLIP_ENABLED", 1)))
         flip_min_base = int(get_config_override("FLIP_BASE_SCORE_MIN", getattr(config, "FLIP_BASE_SCORE_MIN", 4)))
         flip_cooldown = int(get_config_override("FLIP_COOLDOWN_SEC", getattr(config, "FLIP_COOLDOWN_SEC", 600)))
@@ -235,7 +226,6 @@ class AlphaBot:
             time_since_flip = time.time() - last_flip_time
 
             if time_since_flip < flip_cooldown:
-                # Cooldown active — suppress flip entirely
                 mins_left = int((flip_cooldown - time_since_flip) / 60)
                 log.debug(
                     f"[MAIN] {symbol} flip suppressed — "
@@ -266,7 +256,6 @@ class AlphaBot:
                 self._flip_signal_count[symbol] = 0
             return
 
-        # ── Post-flip confirmation gate ───────────────────────
         last_flip = self._last_flip.get(symbol, 0)
         if last_flip > 0:
             flip_min = int(get_config_override("FLIP_MIN_SIGNALS", getattr(config, "FLIP_MIN_SIGNALS", 3)))
@@ -285,20 +274,17 @@ class AlphaBot:
                 self._flip_signal_count[symbol] = 0
                 return
 
-        # ── Regular exit cooldown ─────────────────────────────
         last_exit = self._last_exit.get(symbol, 0)
         if time.time() - last_exit < self.COOLDOWN_SEC:
             mins_left = int((self.COOLDOWN_SEC - (time.time() - last_exit)) / 60)
             log.debug(f"[MAIN] {symbol} in cooldown — {mins_left}m remaining")
             return
 
-        # ── Risk validation ───────────────────────────────────
         ok, reason = self.risk.can_trade(symbol, signal)
         if not ok:
             log.debug(f"[MAIN] {symbol} blocked: {reason}")
             return
 
-        # ── Position sizing and entry ─────────────────────────
         qty = self.risk.calculate_position_size(symbol, signal)
         if qty <= 0:
             log.warning(f"[MAIN] {symbol} position size = 0, skipping")
@@ -340,7 +326,6 @@ class AlphaBot:
         self._scan_count += 1
         self._check_new_day()
 
-        # ── End of day close ──────────────────────────────────
         if self._is_end_of_day():
             if not self._eod_closed:
                 close_eod = int(get_config_override("CLOSE_EOD", 1))
@@ -370,11 +355,9 @@ class AlphaBot:
                 self._eod_closed = True
             return
 
-        # ── Fast loop (every scan) ────────────────────────────
         if self._is_market_open():
             self._run_fast_loop()
 
-        # ── Slow loop — interval adapts per symbol ────────────
         if self._is_market_open():
             now = time.time()
             fast_enabled  = int(get_config_override("FAST_SCAN_ENABLED",  getattr(config, "FAST_SCAN_ENABLED",  1)))
@@ -389,11 +372,11 @@ class AlphaBot:
                     self._run_slow_loop(symbol)
                     self._last_slow[symbol] = now
 
-        # ── Manual meta brain trigger ─────────────────────────
+        # ── Manual trigger checks (every ~60s) ───────────────
         if self._scan_count % 12 == 0:
             self._check_meta_flag()
+            self._check_morning_flag()
 
-        # ── Status log ────────────────────────────────────────
         log_interval = 50 if self._is_market_open() else 60
         if self._scan_count % log_interval == 0:
             open_trades  = get_open_trades()
@@ -427,14 +410,24 @@ class AlphaBot:
         except Exception as e:
             log.error(f"[MAIN] Meta flag check failed: {e}")
 
-    # ── Run ───────────────────────────────────────────────────
+    def _check_morning_flag(self):
+        try:
+            from core.database import get_config_override, set_config_override
+            flag = get_config_override("RUN_MORNING_NOW", "false")
+            if flag == "true":
+                log.info("[MAIN] Manual morning call requested...")
+                set_config_override("RUN_MORNING_NOW", "false")
+                self._morning_call()
+        except Exception as e:
+            log.error(f"[MAIN] Morning flag check failed: {e}")
+
+    # ── Morning call ──────────────────────────────────────────
 
     def _morning_call(self):
         """Run Opus 4.8 pre-market symbol bias call at 9:25am ET."""
         enabled = int(get_config_override("MORNING_CALL_ENABLED", MORNING_CALL_ENABLED))
         if not enabled:
             return
-        # Pass current stream cache so Opus has live pre-market data
         cache = {}
         for sym in SYMBOLS:
             c = self.stream.get_price(sym)
