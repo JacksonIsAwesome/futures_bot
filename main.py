@@ -437,7 +437,7 @@ class AlphaBot:
         # Pass current stream cache so Opus has live pre-market data
         cache = {}
         for sym in SYMBOLS:
-            c = self.stream.get_cache(sym)
+            c = self.stream.get_price(sym)
             if c:
                 cache[sym] = c
         run_morning_call(stream_cache=cache)
