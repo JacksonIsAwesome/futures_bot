@@ -1,5 +1,10 @@
 """
 meta/symbol_profiler.py — Per-Symbol AI Intelligence Layer
+
+v2 fix: _save_profile now enforces minimum ATR floors for leveraged ETFs.
+Claude's suggested min_atr_pct is overridden to at least 1.0% for any 3x ETF.
+This prevents stops from being placed too tight on high-volatility instruments
+regardless of what Claude returns.
 """
 
 import json
@@ -13,6 +18,11 @@ import config
 log = logging.getLogger(__name__)
 
 BARS_URL = "https://data.alpaca.markets/v2/stocks/{symbol}/bars"
+
+# Symbols that are leveraged ETFs — enforce stricter ATR floors
+LEVERAGED_ETFS = {"TQQQ", "SOXL", "SPXL", "UPRO", "UDOW", "LABU", "FNGU"}
+LEVERAGED_ETF_MIN_ATR_PCT = 0.010   # 1.0% minimum for 3x ETFs
+NORMAL_MIN_ATR_PCT        = 0.003   # 0.3% minimum for everything else
 
 
 class SymbolProfiler:
@@ -203,6 +213,13 @@ class SymbolProfiler:
             log.warning(f"[PROFILER] No bar data for {symbol} — skipping")
             return
 
+        is_leveraged = symbol.upper() in LEVERAGED_ETFS
+        leveraged_note = (
+            f"\nIMPORTANT: {symbol} is a 3x LEVERAGED ETF. "
+            f"Set min_atr_pct to at least 0.010 (1.0%) — never below this. "
+            f"Stops must be wide enough to survive normal intraday swings without being whipsawed."
+        ) if is_leveraged else ""
+
         prompt = f"""You are configuring a day trading bot for the stock {symbol}.
 
 The bot uses these parameters per symbol:
@@ -211,7 +228,7 @@ The bot uses these parameters per symbol:
 - breakeven_mult: how many ATRs of profit before moving stop to entry (currently global: {config.BREAKEVEN_ATR_MULT})
 - volume_spike_mult: how many times above average volume counts as a spike (currently global: {config.VOL_ACCEL_MULT})
 - min_atr_floor: minimum ATR in dollars regardless of what the indicator says
-- min_atr_pct: minimum ATR as a percentage of price (0.003 = 0.3%)
+- min_atr_pct: minimum ATR as a percentage of price (0.003 = 0.3%){leveraged_note}
 
 Here is the REAL data for {symbol}:
 
@@ -265,25 +282,22 @@ Respond ONLY with a valid JSON object, no explanation, no markdown, no backticks
             response.raise_for_status()
             raw = response.json()["content"][0]["text"].strip()
 
-            # strip markdown code fences if Claude wraps response despite instructions
             if raw.startswith('```'):
                 lines = raw.split('\n')
-                lines = lines[1:]  # drop ```json line
+                lines = lines[1:]
                 if lines and lines[-1].strip() == '```':
-                    lines = lines[:-1]  # drop closing ```
+                    lines = lines[:-1]
                 raw = '\n'.join(lines).strip()
 
-            # parse the JSON response
             profile = json.loads(raw)
 
-            # validate all required keys are present
             required = ["atr_stop_mult", "atr_tp_mult", "breakeven_mult",
                         "volume_spike_mult", "min_atr_floor", "min_atr_pct", "notes"]
             for key in required:
                 if key not in profile:
                     raise ValueError(f"Missing key: {key}")
 
-            self._save_profile(symbol, profile, raw)
+            self._save_profile(symbol, profile, raw, bar_stats.get("current_price", 0))
 
             log.info(
                 f"[PROFILER] {symbol} profile saved | "
@@ -300,9 +314,8 @@ Respond ONLY with a valid JSON object, no explanation, no markdown, no backticks
         except Exception as e:
             log.error(f"[PROFILER] {symbol}: Claude API failed — {e}")
 
-    def _save_profile(self, symbol: str, profile: dict, raw: str):
-        # Ensure the profile doesn't produce an R:R below the minimum
-        # so it can never block all trades silently
+    def _save_profile(self, symbol: str, profile: dict, raw: str, current_price: float = 0):
+        # ── Enforce minimum R:R ───────────────────────────────
         min_rr = getattr(config, "MIN_RR", 1.0)
         actual_rr = profile["atr_tp_mult"] / profile["atr_stop_mult"]
         if actual_rr < min_rr:
@@ -311,6 +324,37 @@ Respond ONLY with a valid JSON object, no explanation, no markdown, no backticks
                 f"[PROFILER] {symbol} R:R too low ({actual_rr:.2f}) — "
                 f"bumping atr_tp_mult to {profile['atr_tp_mult']}x"
             )
+
+        # ── Enforce ATR floors for leveraged ETFs ─────────────
+        # Claude sometimes sets floors too tight for 3x ETFs.
+        # This is a hard override — never rely on Claude to get this right.
+        sym_upper = symbol.upper()
+        if sym_upper in LEVERAGED_ETFS:
+            if profile["min_atr_pct"] < LEVERAGED_ETF_MIN_ATR_PCT:
+                log.warning(
+                    f"[PROFILER] {symbol} is a leveraged ETF — "
+                    f"overriding min_atr_pct {profile['min_atr_pct']:.4f} → {LEVERAGED_ETF_MIN_ATR_PCT:.4f}"
+                )
+                profile["min_atr_pct"] = LEVERAGED_ETF_MIN_ATR_PCT
+            # Also enforce floor in dollars
+            if current_price > 0:
+                enforced_floor = current_price * LEVERAGED_ETF_MIN_ATR_PCT
+                if profile["min_atr_floor"] < enforced_floor:
+                    log.warning(
+                        f"[PROFILER] {symbol} min_atr_floor ${profile['min_atr_floor']:.3f} "
+                        f"→ ${enforced_floor:.3f} (1% of ${current_price:.2f})"
+                    )
+                    profile["min_atr_floor"] = round(enforced_floor, 3)
+        else:
+            # Normal symbols — still enforce the global minimum
+            if profile["min_atr_pct"] < NORMAL_MIN_ATR_PCT:
+                profile["min_atr_pct"] = NORMAL_MIN_ATR_PCT
+                if current_price > 0:
+                    profile["min_atr_floor"] = max(
+                        profile["min_atr_floor"],
+                        round(current_price * NORMAL_MIN_ATR_PCT, 3)
+                    )
+
         with get_conn() as conn:
             cur = conn.cursor()
             cur.execute("""
