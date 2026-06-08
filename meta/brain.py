@@ -330,7 +330,6 @@ class MetaBrain:
         near_m   = missed.get("near_misses",  0)
 
         # ── MIN_SIGNAL_SCORE ──────────────────────────────────────────────────
-        # Read from DB so increments accumulate (3→4→5) not loop (3→4→3→4).
         if win_rate < 45:
             current = int(get_config_override("MIN_SIGNAL_SCORE", config.MIN_SIGNAL_SCORE))
             new_val = min(current + 1, 5)
@@ -348,7 +347,6 @@ class MetaBrain:
                 adjustments["MIN_SIGNAL_SCORE"] = f"{current} → {new_val} (missing too many wins)"
 
         # ── ATR_TP_MULT ───────────────────────────────────────────────────────
-        # Read from DB so 4.0→4.1→4.2 accumulates instead of looping at 4.1.
         if avg_rr < 1.5 and total >= config.META_MIN_TRADES:
             current = float(get_config_override("ATR_TP_MULT", config.ATR_TP_MULT))
             new_val = round(current + step, 2)
@@ -363,7 +361,6 @@ class MetaBrain:
                 adjustments["ATR_STOP_MULT"] = f"{current} → {new_val} (R:R excellent, tightening stops)"
 
         # ── VOLUME_SPIKE_MULT ─────────────────────────────────────────────────
-        # Read from DB so 1.5→1.4→1.3 accumulates instead of looping at 1.4.
         if near_m > 10:
             current = float(get_config_override("VOLUME_SPIKE_MULT", config.VOLUME_SPIKE_MULT))
             new_val = round(current - step, 2)
@@ -460,13 +457,9 @@ class MetaBrain:
                 "MOMENTUM_GATE_ENABLED":       get_config_override("MOMENTUM_GATE_ENABLED",       config.MOMENTUM_GATE_ENABLED),
                 "MOMENTUM_GATE_MIN":           get_config_override("MOMENTUM_GATE_MIN",           config.MOMENTUM_GATE_MIN),
                 "ROC_PERIOD":                  get_config_override("ROC_PERIOD",                  config.ROC_PERIOD),
-                "ROC_MIN_LONG":                get_config_override("ROC_MIN_LONG",                config.ROC_MIN_LONG),
-                "ROC_MIN_SHORT":               get_config_override("ROC_MIN_SHORT",               config.ROC_MIN_SHORT),
                 "MACD_FAST":                   get_config_override("MACD_FAST",                   config.MACD_FAST),
                 "MACD_SLOW":                   get_config_override("MACD_SLOW",                   config.MACD_SLOW),
                 "MACD_SIGNAL_PERIOD":          get_config_override("MACD_SIGNAL_PERIOD",          config.MACD_SIGNAL_PERIOD),
-                "CANDLE_CONSISTENCY_LOOKBACK": get_config_override("CANDLE_CONSISTENCY_LOOKBACK", config.CANDLE_CONSISTENCY_LOOKBACK),
-                "CANDLE_CONSISTENCY_MIN":      get_config_override("CANDLE_CONSISTENCY_MIN",      config.CANDLE_CONSISTENCY_MIN),
                 # ── MTF / VWAP / Volume ───────────────────────
                 "MTF_FILTER_ENABLED":          get_config_override("MTF_FILTER_ENABLED",          config.MTF_FILTER_ENABLED),
                 "MTF_EMA_PERIOD":              get_config_override("MTF_EMA_PERIOD",              config.MTF_EMA_PERIOD),
@@ -512,11 +505,9 @@ Here is today's full data including the complete 1-minute bar history for each s
 CONFIG REFERENCE (current_config shows live values including any DB overrides):
 - MIN_SIGNAL_SCORE: base signals needed out of 5 to consider a trade
 - PRIME_BASE_MIN / REGULAR_BASE_MIN: score thresholds during prime (9:30-11am) vs rest of day
-- MOMENTUM_GATE_ENABLED/MIN: require ROC+MACD+CandleConsistency confirmation (0-3 score)
-- ROC_PERIOD/MIN_LONG/MIN_SHORT: price acceleration % needed over N candles
+- MOMENTUM_GATE_ENABLED/MIN: require MACD confirmation (0-2 score)
 - MACD_FAST/SLOW/SIGNAL_PERIOD: MACD histogram must be growing in signal direction
-- CANDLE_CONSISTENCY_LOOKBACK/MIN: N of last M candles must close in signal direction
-- MTF_FILTER_ENABLED/PERIOD: slow EMA on 1-min candles must agree with direction
+- MTF_FILTER_ENABLED/PERIOD: slow EMA on 5-min candles must agree with direction
 - VWAP_DEV_MULT: price must be X std devs from VWAP (breakout strength)
 - VOL_ACCEL_MULT: projected candle volume must be X× the 20-candle average
 - RSI_OVERBOUGHT/OVERSOLD: RSI gates — blocks longs near OB, shorts near OS
