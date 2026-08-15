@@ -13,7 +13,7 @@ SIGNAL STACK (rebuilt from research):
     ADX ≥ 20 = market is trending → allow evaluation
     This alone would have blocked most bad trades in sideways sessions.
 
-  Gate 1 — Claude Haiku direction
+  Gate 1 — NVIDIA Nemotron direction (swapped from Claude Haiku)
     Sees: 5-min candles, price, VWAP + slope, RSI (50-line not 70/30),
           ADX, opening range high/low, session relative volume, EMA state
     Returns: long / short / none
@@ -46,13 +46,13 @@ API HEALTH TRACKING:
 
 import math
 import logging
-import requests as _requests
 import pytz
 from dataclasses import dataclass
 from typing import Optional
 from collections import deque
 from datetime import datetime
 from core.database import get_config_override, log_signal
+from core.llm_client import call_llm, extract_word, LLMError, FAST_MODEL
 from meta.symbol_profiler import SymbolProfiler
 
 _profiler = SymbolProfiler()
@@ -64,7 +64,7 @@ ET  = pytz.timezone("America/New_York")
 # ── API health tracker ────────────────────────────────────────────────────────
 
 class _APIHealthTracker:
-    """Tracks Claude API call success/failure rate."""
+    """Tracks NVIDIA API call success/failure rate."""
     def __init__(self):
         self.consecutive_failures = 0
         self.consecutive_successes = 0
@@ -76,7 +76,7 @@ class _APIHealthTracker:
         self.consecutive_successes += 1
         self.total_calls += 1
         if self.consecutive_successes == 1:
-            log.info(f"[CLAUDE-DIR] ✓ API recovered for {symbol}")
+            log.info(f"[LLM-DIR] ✓ API recovered for {symbol}")
         # Write health to DB every 10 calls so dashboard can read it
         if self.total_calls % 10 == 0:
             self._persist()
@@ -89,14 +89,18 @@ class _APIHealthTracker:
         if self.consecutive_failures in (1, 3, 10):
             pct = round(self.total_failures / self.total_calls * 100)
             log.warning(
-                f"[CLAUDE-DIR] ⚠ API failure #{self.consecutive_failures} "
+                f"[LLM-DIR] ⚠ API failure #{self.consecutive_failures} "
                 f"for {symbol}: {reason} | "
                 f"failure rate={pct}% ({self.total_failures}/{self.total_calls})"
             )
         self._persist()
 
     def _persist(self):
-        """Write health stats to DB so dashboard /api/health can read them."""
+        """Write health stats to DB so dashboard /api/health can read them.
+        NOTE: DB key names kept as CLAUDE_API_* even though this now calls
+        NVIDIA — the dashboard reads these exact keys. Renaming them is part
+        of the dashboard fix pass, not this API swap, to avoid breaking the
+        dashboard reads in between the two changes."""
         try:
             from core.database import set_config_override
             set_config_override("CLAUDE_API_FAILURES", self.consecutive_failures)
@@ -183,23 +187,23 @@ def _fallback_direction(cache: dict, candles: list) -> str:
     return "none"
 
 
-# ── Claude direction call ─────────────────────────────────────────────────────
+# ── LLM direction call ─────────────────────────────────────────────────────
 
-def _claude_direction(symbol: str, cache: dict, candles: list,
-                      atr: float) -> str:
+def _llm_direction(symbol: str, cache: dict, candles: list,
+                    atr: float) -> str:
     """
-    Ask Claude Haiku for trade direction using rich 5-min context.
-    Returns 'long', 'short', or 'none'.
+    Ask NVIDIA's Nemotron Nano model for trade direction using rich 5-min
+    context. Returns 'long', 'short', or 'none'.
 
     Falls back to _fallback_direction() on any API error — the fallback
     is a real scored system, not just EMA cross.
 
     API health is tracked globally and logged when degraded.
     """
-    api_key = getattr(config, "ANTHROPIC_API_KEY", "")
+    api_key = getattr(config, "NVIDIA_API_KEY", "")
 
     if not api_key:
-        log.debug(f"[CLAUDE-DIR] No API key — using rule-based fallback for {symbol}")
+        log.debug(f"[LLM-DIR] No API key — using rule-based fallback for {symbol}")
         return _fallback_direction(cache, candles)
 
     # Pull all context from cache
@@ -285,44 +289,29 @@ Only say none if you genuinely cannot determine direction with confidence.
 Respond with EXACTLY one word: long, short, or none"""
 
     try:
-        r = _requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key":         api_key,
-                "anthropic-version": "2023-06-01",
-                "content-type":      "application/json"
-            },
-            json={
-                "model":      "claude-haiku-4-5-20251001",
-                "max_tokens": 5,
-                "messages":   [{"role": "user", "content": prompt}]
-            },
-            timeout=8
+        raw_answer = call_llm(
+            prompt=prompt,
+            api_key=api_key,
+            model=FAST_MODEL,
+            max_tokens=10,   # plain instruct model, no reasoning trace expected
+            timeout=8,
+            temperature=0.0,  # deterministic — this is a classification, not creative
         )
-        r.raise_for_status()
-        answer = r.json()["content"][0]["text"].strip().lower().rstrip(".")
+        answer = extract_word(raw_answer, ("long", "short", "none"))
 
-        if answer in ("long", "short", "none"):
-            _api_health.record_success(symbol)
-            log.info(
-                f"[CLAUDE-DIR] {symbol} → {answer} "
-                f"(ADX={adx:.1f} RSI={rsi:.1f} "
-                f"VWAP={vwap_slope} rel_vol={rel_vol:.1f}x)"
-            )
-            return answer
+        _api_health.record_success(symbol)
+        log.info(
+            f"[LLM-DIR] {symbol} → {answer} "
+            f"(ADX={adx:.1f} RSI={rsi:.1f} "
+            f"VWAP={vwap_slope} rel_vol={rel_vol:.1f}x)"
+        )
+        return answer
 
-        log.warning(f"[CLAUDE-DIR] {symbol} unexpected response: '{answer}' — using fallback")
-        _api_health.record_failure(symbol, f"unexpected response: {answer}")
-
-    except _requests.exceptions.Timeout:
-        _api_health.record_failure(symbol, "timeout (8s)")
-    except _requests.exceptions.ConnectionError:
-        _api_health.record_failure(symbol, "connection error")
-    except Exception as e:
+    except (LLMError, ValueError) as e:
         _api_health.record_failure(symbol, str(e)[:60])
 
     # Fallback — rule-based, genuinely independent
-    log.info(f"[CLAUDE-DIR] {symbol} using rule-based fallback (API failures={_api_health.consecutive_failures})")
+    log.info(f"[LLM-DIR] {symbol} using rule-based fallback (API failures={_api_health.consecutive_failures})")
     return _fallback_direction(cache, candles)
 
 
@@ -634,7 +623,7 @@ class EMAVWAPStrategy:
         # ══════════════════════════════════════════════════════
         # GATE 1 — CLAUDE DIRECTION (with rule-based fallback)
         # ══════════════════════════════════════════════════════
-        direction = _claude_direction(symbol, cache, candles, atr)
+        direction = _llm_direction(symbol, cache, candles, atr)
         if direction == "none":
             log_signal(
                 symbol=symbol, score=0, direction=None,
