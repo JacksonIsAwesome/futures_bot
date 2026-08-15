@@ -48,6 +48,7 @@ Runs daily at 5pm ET. Analyzes last 7 days:
   ALPACA_API_KEY=your_key
   ALPACA_SECRET_KEY=your_secret
   DATABASE_URL=your_postgresql_url
+  NVIDIA_API_KEY=your_nvapi_key   # free at build.nvidia.com — no card required
   ```
 
 ### 3. Deploy
