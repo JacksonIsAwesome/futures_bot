@@ -1,7 +1,7 @@
 """
 meta/morning_call.py — v2
 ──────────────────────────
-Runs at 9:25am ET. Calls Opus 4.8 with full pre-market context:
+Runs at 9:25am ET. Calls NVIDIA Nemotron (swapped from Opus 4.8) with full pre-market context:
   - Per-symbol indicator snapshot (price, ADX, RSI, EMA state, ATR)
   - Sentiment: Alpaca news headlines, pre-market gaps, VIX (each toggleable)
   - Meta brain performance context (7-day win rate, recent notes)
@@ -10,10 +10,10 @@ DB keys written:
   MORNING_BIAS          → "long" | "short" | "neutral"
   MORNING_FAVOR         → comma-sep symbols (1.5x size)
   MORNING_AVOID         → comma-sep symbols (0.5x size)
-  MORNING_NOTES         → Opus summary text
+  MORNING_NOTES         → LLM summary text
   MORNING_CALL_DATE     → ISO date
-  MORNING_FULL_PROMPT   → full prompt sent to Opus (for dashboard display)
-  MORNING_FULL_RESPONSE → full raw Opus response (for dashboard display)
+  MORNING_FULL_PROMPT   → full prompt sent to LLM (for dashboard display)
+  MORNING_FULL_RESPONSE → full raw LLM response (for dashboard display)
   MORNING_VIX           → VIX value
   MORNING_GAPS          → JSON of {symbol: gap_pct}
   MORNING_HEADLINES     → JSON of {symbol: [headlines]}
@@ -27,6 +27,7 @@ from datetime import datetime, timezone
 import pytz
 
 from meta.sentiment import fetch as fetch_sentiment, format_for_prompt
+from core.llm_client import call_llm, extract_json, LLMError, DEEP_MODEL
 
 log = logging.getLogger(__name__)
 ET  = pytz.timezone("America/New_York")
@@ -35,11 +36,11 @@ SYMBOLS = ["QQQ", "NVDA", "TQQQ", "SPY", "SOXL", "AMD", "TSLA"]
 
 def _get_api_key():
     try:
-        from config import ANTHROPIC_API_KEY
-        return ANTHROPIC_API_KEY
+        from config import NVIDIA_API_KEY
+        return NVIDIA_API_KEY
     except Exception:
         import os
-        return os.environ.get("ANTHROPIC_API_KEY", "")
+        return os.environ.get("NVIDIA_API_KEY", "")
 
 
 def _get_config(key, default):
@@ -73,7 +74,7 @@ def _write_to_db(results: dict):
 
 
 def _get_meta_context() -> str:
-    """Pull recent meta brain performance for Opus context."""
+    """Pull recent meta brain performance for LLM context."""
     try:
         import psycopg2, psycopg2.extras
         from config import DATABASE_URL
@@ -166,7 +167,7 @@ def run(stream_cache: dict = None) -> dict:
         return {}
 
     log.info("[MORNING] ═══════════════════════════════════════════")
-    log.info("[MORNING] Running Opus 4.8 pre-market session call...")
+    log.info("[MORNING] Running NVIDIA Nemotron pre-market session call...")
 
     # 1. Fetch sentiment data
     sentiment = fetch_sentiment(SYMBOLS, stream_cache)
@@ -188,25 +189,17 @@ def run(stream_cache: dict = None) -> dict:
     }
 
     try:
-        resp = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key":         api_key,
-                "anthropic-version": "2023-06-01",
-                "content-type":      "application/json",
-            },
-            json={
-                "model":      "claude-opus-4-8",
-                "max_tokens": 500,
-                "messages":   [{"role": "user", "content": prompt}],
-            },
+        raw = call_llm(
+            prompt=prompt,
+            api_key=api_key,
+            model=DEEP_MODEL,
+            max_tokens=500,
             timeout=30,
+            temperature=0.3,
         )
-        resp.raise_for_status()
-        raw = resp.json()["content"][0]["text"].strip()
-        log.info(f"[MORNING] Opus response: {raw}")
+        log.info(f"[MORNING] LLM response: {raw}")
 
-        result     = json.loads(raw)
+        result     = json.loads(extract_json(raw))
         bias       = result.get("overall_bias", "neutral")
         favor      = [s for s in result.get("favor", []) if s in SYMBOLS]
         avoid      = [s for s in result.get("avoid", []) if s in SYMBOLS]
@@ -249,6 +242,6 @@ def run(stream_cache: dict = None) -> dict:
         return {}
     except Exception as e:
         err = str(e)
-        log.error(f"[MORNING] Opus call failed: {err}")
+        log.error(f"[MORNING] LLM call failed: {err}")
         _write_to_db({**base_payload, "MORNING_CALL_ERROR": err, "MORNING_FULL_RESPONSE": ""})
         return {}
