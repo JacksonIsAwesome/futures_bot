@@ -28,13 +28,14 @@ import psycopg2.extras
 from datetime import datetime, date, timedelta
 from core.database import get_conn, set_config_override, get_config_override
 from core.notifier import notify_eod_summary
+from core.llm_client import call_llm, LLMError, DEEP_MODEL
 import config
 
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 GITHUB_REPO  = os.environ.get("GITHUB_REPO", "JacksonIsAwesome/futures_bot")
 GITHUB_API   = "https://api.github.com"
 
-ANTHROPIC_API_KEY = config.ANTHROPIC_API_KEY
+NVIDIA_API_KEY = config.NVIDIA_API_KEY
 
 log = logging.getLogger(__name__)
 
@@ -547,25 +548,17 @@ student who built this bot. Be specific — reference actual prices, times, and 
 variable names."""
 
         try:
-            response = requests.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key":         ANTHROPIC_API_KEY,
-                    "anthropic-version": "2023-06-01",
-                    "content-type":      "application/json"
-                },
-                json={
-                    "model":      "claude-sonnet-4-20250514",
-                    "max_tokens": 1024,
-                    "messages":   [{"role": "user", "content": prompt}]
-                },
+            claude_text = call_llm(
+                prompt=prompt,
+                api_key=NVIDIA_API_KEY,
+                model=DEEP_MODEL,
+                max_tokens=1024,
                 timeout=45,
+                temperature=0.3,
             )
-            response.raise_for_status()
-            claude_text = response.json()["content"][0]["text"]
 
-        except Exception as e:
-            log.error(f"[META] Claude API failed: {e} — using fallback report")
+        except LLMError as e:
+            log.error(f"[META] NVIDIA API failed: {e} — using fallback report")
             claude_text = (
                 f"API unavailable. Raw stats: "
                 f"win_rate={stats.get('win_rate',0):.1f}% | "
@@ -581,7 +574,7 @@ variable names."""
             f"R:R={stats.get('avg_rr',0):.2f} | "
             f"P&L=${stats.get('total_pnl',0):.2f}",
             f"",
-            f"CLAUDE ANALYSIS:",
+            f"LLM ANALYSIS:",
             claude_text,
             f"",
             f"AUTO-ADJUSTMENTS:",
