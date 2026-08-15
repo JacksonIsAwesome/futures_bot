@@ -13,6 +13,7 @@ import requests
 import psycopg2.extras
 from datetime import datetime, date, timedelta
 from core.database import get_conn
+from core.llm_client import call_llm, extract_json, LLMError, DEEP_MODEL
 import config
 
 log = logging.getLogger(__name__)
@@ -265,31 +266,15 @@ Respond ONLY with a valid JSON object, no explanation, no markdown, no backticks
 }}"""
 
         try:
-            response = requests.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key":         config.ANTHROPIC_API_KEY,
-                    "anthropic-version": "2023-06-01",
-                    "content-type":      "application/json",
-                },
-                json={
-                    "model":      "claude-haiku-4-5-20251001",
-                    "max_tokens": 300,
-                    "messages":   [{"role": "user", "content": prompt}]
-                },
+            raw = call_llm(
+                prompt=prompt,
+                api_key=config.NVIDIA_API_KEY,
+                model=DEEP_MODEL,
+                max_tokens=300,
                 timeout=30,
+                temperature=0.3,
             )
-            response.raise_for_status()
-            raw = response.json()["content"][0]["text"].strip()
-
-            if raw.startswith('```'):
-                lines = raw.split('\n')
-                lines = lines[1:]
-                if lines and lines[-1].strip() == '```':
-                    lines = lines[:-1]
-                raw = '\n'.join(lines).strip()
-
-            profile = json.loads(raw)
+            profile = json.loads(extract_json(raw))
 
             required = ["atr_stop_mult", "atr_tp_mult", "breakeven_mult",
                         "volume_spike_mult", "min_atr_floor", "min_atr_pct", "notes"]
@@ -309,10 +294,12 @@ Respond ONLY with a valid JSON object, no explanation, no markdown, no backticks
             log.info(f"[PROFILER] {symbol} notes: {profile['notes']}")
 
         except json.JSONDecodeError as e:
-            log.error(f"[PROFILER] {symbol}: Claude returned invalid JSON — {e}")
+            log.error(f"[PROFILER] {symbol}: LLM returned invalid JSON — {e}")
             log.error(f"[PROFILER] Raw response: {raw[:200]}")
+        except LLMError as e:
+            log.error(f"[PROFILER] {symbol}: NVIDIA API failed — {e}")
         except Exception as e:
-            log.error(f"[PROFILER] {symbol}: Claude API failed — {e}")
+            log.error(f"[PROFILER] {symbol}: profile generation failed — {e}")
 
     def _save_profile(self, symbol: str, profile: dict, raw: str, current_price: float = 0):
         # ── Enforce minimum R:R ───────────────────────────────
