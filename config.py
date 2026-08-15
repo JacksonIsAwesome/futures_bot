@@ -4,8 +4,9 @@
 
 import os
 
-# ── Anthropic ────────────────────────────────────────────────
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+# ── NVIDIA NIM (free API — swapped from Anthropic) ─────────────
+# Get a free key at build.nvidia.com — no card required.
+NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
 
 # ── Alpaca ───────────────────────────────────────────────────
 ALPACA_API_KEY    = os.environ.get("ALPACA_API_KEY", "")
