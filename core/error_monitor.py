@@ -1,9 +1,9 @@
 """
-core/error_monitor.py — Bot Error Detection + Claude Diagnosis
+core/error_monitor.py — Bot Error Detection + LLM Diagnosis
 
 When the bot hits a crash or repeated scan errors, this:
   1. Collects the error + recent context
-  2. Calls Claude API to diagnose it
+  2. Calls NVIDIA's Nemotron API to diagnose it (swapped from Claude)
   3. Texts you the diagnosis + suggested fix
 
 Plugs into main.py's exception handler — no Railway API needed.
@@ -12,16 +12,16 @@ The bot catches its own errors from inside the process.
 
 import logging
 import traceback
-import requests
 import os
 from collections import deque
 from datetime import datetime
+from core.llm_client import call_llm, LLMError, DEEP_MODEL
 
 log = logging.getLogger(__name__)
 
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
 
-# Rolling buffer of recent log lines so Claude has context
+# Rolling buffer of recent log lines so the LLM has context
 _recent_logs: deque = deque(maxlen=50)
 _error_count: dict  = {}   # error_hash -> count (suppresses duplicate texts)
 
@@ -47,12 +47,12 @@ def _get_recent_logs() -> str:
     return "\n".join(list(_recent_logs)[-30:])
 
 
-def _diagnose_with_claude(error: str, context: str) -> str:
-    """Ask Claude to diagnose the error and suggest a fix."""
-    if not ANTHROPIC_API_KEY:
-        return "Claude API not configured."
-    try:
-        prompt = f"""You are debugging a Python algorithmic trading bot called AlphaBot.
+def _diagnose_with_llm(error: str, context: str) -> str:
+    """Ask the LLM to diagnose the error and suggest a fix."""
+    if not NVIDIA_API_KEY:
+        return "NVIDIA API not configured."
+
+    prompt = f"""You are debugging a Python algorithmic trading bot called AlphaBot.
 It runs on Railway (cloud), uses Alpaca paper trading API, PostgreSQL, and WebSocket streams.
 
 Here is the error that just crashed the bot:
@@ -66,25 +66,18 @@ a code change, env variable, or config value. Be concrete and brief.
 If it's a known issue (connection timeout, stale data, API rate limit),
 say so and whether the bot will auto-recover."""
 
-        r = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key":         ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type":      "application/json"
-            },
-            json={
-                "model":      "claude-haiku-4-5-20251001",
-                "max_tokens": 300,
-                "messages":   [{"role": "user", "content": prompt}]
-            },
-            timeout=20
+    try:
+        return call_llm(
+            prompt=prompt,
+            api_key=NVIDIA_API_KEY,
+            model=DEEP_MODEL,
+            max_tokens=300,
+            timeout=20,
+            temperature=0.3,
         )
-        r.raise_for_status()
-        return r.json()["content"][0]["text"]
-    except Exception as e:
-        log.error(f"[MONITOR] Claude diagnosis failed: {e}")
-        return f"Claude unavailable. Raw error: {error[:200]}"
+    except LLMError as e:
+        log.error(f"[MONITOR] LLM diagnosis failed: {e}")
+        return f"LLM unavailable. Raw error: {error[:200]}"
 
 
 def report_error(error: Exception, context: str = ""):
@@ -106,9 +99,9 @@ def report_error(error: Exception, context: str = ""):
         return
     _error_count[error_type] = now
 
-    log.error(f"[MONITOR] Reporting error to Claude for diagnosis: {error_type}")
+    log.error(f"[MONITOR] Reporting error to LLM for diagnosis: {error_type}")
 
-    diagnosis = _diagnose_with_claude(
+    diagnosis = _diagnose_with_llm(
         error=error_str[:1500],
         context=log_ctx
     )
@@ -116,7 +109,7 @@ def report_error(error: Exception, context: str = ""):
     msg = (
         f"⚠️ AlphaBot Error\n"
         f"{error_type}: {str(error)[:100]}\n\n"
-        f"Claude says:\n{diagnosis[:400]}"
+        f"LLM says:\n{diagnosis[:400]}"
     )
     _send(msg)
 
