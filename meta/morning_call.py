@@ -104,12 +104,12 @@ def _build_prompt(stream_cache: dict, sentiment_block: str) -> str:
     for sym in SYMBOLS:
         c = stream_cache.get(sym, {})
         if c:
-            price     = c.get("price", 0)
-            adx       = c.get("adx", 0)
-            rsi       = c.get("rsi", 50)
-            ema9      = c.get("ema_fast", 0)
-            ema21     = c.get("ema_slow", 0)
-            atr       = c.get("atr", 0)
+            price     = c.get("price")    or 0
+            adx       = c.get("adx")      or 0
+            rsi       = c.get("rsi")      or 50
+            ema9      = c.get("ema_fast") or 0
+            ema21     = c.get("ema_slow") or 0
+            atr       = c.get("atr")      or 0
             ema_state = "BULL" if ema9 > ema21 else "BEAR"
             symbol_lines.append(
                 f"  {sym}: ${price:.2f} | ADX={adx:.1f} RSI={rsi:.1f} "
@@ -163,7 +163,7 @@ def run(stream_cache: dict = None) -> dict:
 
     api_key = _get_api_key()
     if not api_key:
-        log.warning("[MORNING] No Anthropic API key — skipping morning call")
+        log.warning("[MORNING] No NVIDIA API key — skipping morning call")
         return {}
 
     log.info("[MORNING] ═══════════════════════════════════════════")
