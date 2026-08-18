@@ -4,12 +4,18 @@ dashboard/app.py — Flask API + Dashboard Server for AlphaBot
 
 import json
 import os
+import requests
 from flask import Flask, jsonify, request, send_from_directory
 import psycopg2
 import psycopg2.extras
 
 app = Flask(__name__, static_folder='static')
 DATABASE_URL = os.environ.get('DATABASE_URL', '')
+
+# ── Alpaca (for live position price bars) ──────────────────────
+ALPACA_API_KEY    = os.environ.get('ALPACA_API_KEY', '')
+ALPACA_SECRET_KEY = os.environ.get('ALPACA_SECRET_KEY', '')
+ALPACA_DATA_URL   = 'https://data.alpaca.markets'
 
 
 def get_conn():
@@ -59,6 +65,47 @@ def overview():
                 'week':  {'pnl': round(float(week['total_pnl'] or 0),2), 'trades': int(week['total'] or 0), 'win_rate': week_wr},
                 'recent_trades': recent
             })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/bars')
+def bars():
+    """
+    Live 1-min price bars for one or more symbols — powers the Positions tab charts.
+    Usage: /api/bars?symbols=QQQ,NVDA,TQQQ
+    Returns: {"bars": {"QQQ": [{t,o,h,l,c,v}, ...], ...}}
+    One multi-symbol Alpaca call instead of one round-trip per symbol.
+    """
+    try:
+        symbols = request.args.get('symbols', '').strip()
+        if not symbols:
+            return jsonify({'bars': {}})
+        if not ALPACA_API_KEY or not ALPACA_SECRET_KEY:
+            return jsonify({'error': 'Alpaca keys not configured on dashboard service'}), 500
+
+        headers = {
+            'APCA-API-KEY-ID':     ALPACA_API_KEY,
+            'APCA-API-SECRET-KEY': ALPACA_SECRET_KEY,
+        }
+        params = {
+            'symbols':   symbols,
+            'timeframe': '1Min',
+            'limit':     90,
+            'feed':      'iex',
+        }
+        r = requests.get(f'{ALPACA_DATA_URL}/v2/stocks/bars', headers=headers, params=params, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        raw_bars = data.get('bars', {}) or {}
+        out = {
+            sym: [{'t': b['t'], 'o': b['o'], 'h': b['h'], 'l': b['l'], 'c': b['c'], 'v': b['v']} for b in blist]
+            for sym, blist in raw_bars.items()
+        }
+        return jsonify({'bars': out})
+    except requests.exceptions.HTTPError as e:
+        status = e.response.status_code if e.response is not None else '?'
+        return jsonify({'error': f'Alpaca HTTP {status}: {e}'}), 502
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -218,8 +265,12 @@ def run_meta():
 @app.route('/api/health')
 def health():
     """
-    Returns bot health including Claude API status.
-    Tracks both Haiku (per-signal direction calls) and Opus (morning call).
+    Returns bot health for both NVIDIA call sites:
+      nvidia_api   — the per-signal direction gate (fast model, called constantly)
+      morning_call — the once-daily pre-market bias call (deep model)
+    DB keys are still named CLAUDE_API_* / MORNING_* because that's what the bot
+    writes (renaming those touches the trading code, not just the dashboard) —
+    only the JSON keys returned here are renamed for the UI.
     """
     try:
         with get_conn() as conn:
@@ -236,14 +287,14 @@ def health():
             rows = {r['key']: {'value': r['value'], 'updated_at': r['updated_at'].isoformat() if r['updated_at'] else None}
                     for r in cur.fetchall()}
 
-        # Haiku direction API health
+        # Direction-gate API health
         failures = int(rows.get('CLAUDE_API_FAILURES', {}).get('value', 0))
         total    = int(rows.get('CLAUDE_API_TOTAL',    {}).get('value', 1))
         last_ok  = rows.get('CLAUDE_LAST_SUCCESS', {}).get('updated_at')
         failure_rate = round(failures / max(total, 1) * 100, 1)
         status = "healthy" if failures < 3 else "degraded" if failures < 10 else "down"
 
-        # Opus morning call health
+        # Morning call health
         morning_error    = rows.get('MORNING_CALL_ERROR', {}).get('value', '')
         morning_date     = rows.get('MORNING_CALL_DATE',  {}).get('value', '')
         morning_ran      = bool(rows.get('MORNING_FULL_RESPONSE', {}).get('value', ''))
@@ -252,7 +303,7 @@ def health():
         morning_status   = 'ok' if morning_ok else ('error' if morning_error else 'not_run')
 
         return jsonify({
-            'claude_api': {
+            'nvidia_api': {
                 'status':            status,
                 'consecutive_fails': failures,
                 'total_calls':       total,
@@ -260,7 +311,7 @@ def health():
                 'last_success':      last_ok,
                 'using_fallback':    failures >= 3,
             },
-            'opus_morning': {
+            'morning_call': {
                 'status':   morning_status,
                 'date':     morning_date,
                 'bias':     morning_bias,
@@ -367,7 +418,12 @@ def run_morning_call():
 
 @app.route('/api/sentiment')
 def sentiment():
-    """Live sentiment snapshot — VIX, gaps, headlines from this morning."""
+    """
+    Live sentiment snapshot — VIX, gaps, headlines.
+    These get written during the scan loop independent of whether the full
+    morning call completed, so this can populate even on a day the morning
+    call itself errored out.
+    """
     try:
         with get_conn() as conn:
             cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
