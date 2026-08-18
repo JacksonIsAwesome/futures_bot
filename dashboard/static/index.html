@@ -6,6 +6,7 @@
 <title>AlphaBot Dashboard</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 :root {
@@ -30,7 +31,7 @@ body { font-family:'SF Mono','JetBrains Mono','Fira Code',monospace; background:
 .api-badge.healthy { background:rgba(16,185,129,0.15); color:var(--green); border:1px solid rgba(16,185,129,0.3); }
 .api-badge.degraded { background:rgba(245,158,11,0.15); color:var(--amber); border:1px solid rgba(245,158,11,0.3); }
 .api-badge.down { background:rgba(239,68,68,0.15); color:var(--red); border:1px solid rgba(239,68,68,0.3); }
-.api-badge.fallback { background:rgba(139,92,246,0.15); color:var(--purple); border:1px solid rgba(139,92,246,0.3); }
+.api-badge.rulebased { background:rgba(139,92,246,0.15); color:var(--purple); border:1px solid rgba(139,92,246,0.3); }
 .tabs { background:var(--navy-dark); border-bottom:1px solid var(--border); padding:0 20px; display:flex; overflow-x:auto; }
 .tabs::-webkit-scrollbar { height:0; }
 .tab { padding:14px 14px; cursor:pointer; color:var(--text-muted); font-size:11px; letter-spacing:0.06em; text-transform:uppercase; border-bottom:2px solid transparent; transition:all 0.15s; display:flex; align-items:center; gap:6px; white-space:nowrap; flex-shrink:0; }
@@ -61,13 +62,13 @@ body { font-family:'SF Mono','JetBrains Mono','Fira Code',monospace; background:
 .badge-open{background:rgba(59,130,246,0.15);color:var(--blue-glow)} .badge-closed{background:rgba(139,163,199,0.15);color:var(--text-secondary)}
 .badge-stopped{background:rgba(245,158,11,0.15);color:var(--amber)} .badge-none{background:rgba(74,96,128,0.15);color:var(--text-muted)}
 .badge-healthy{background:rgba(16,185,129,0.15);color:var(--green)} .badge-degraded{background:rgba(245,158,11,0.15);color:var(--amber)}
-.badge-fallback{background:rgba(139,92,246,0.15);color:var(--purple)} .badge-new{background:rgba(16,185,129,0.15);color:var(--green)}
+.badge-rulebased{background:rgba(139,92,246,0.15);color:var(--purple)} .badge-new{background:rgba(16,185,129,0.15);color:var(--green)}
 .badge-group{background:rgba(59,130,246,0.15);color:var(--blue-glow)}
 .score-bar { display:flex; gap:3px; align-items:center; }
 .score-pip { width:12px; height:4px; border-radius:2px; background:var(--navy-accent); }
 .score-pip.filled { background:var(--blue-glow); }
-/* Symbol cards */
-.sym-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(255px,1fr)); gap:12px; margin-bottom:16px; }
+/* Position / symbol cards */
+.sym-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(290px,1fr)); gap:12px; margin-bottom:16px; }
 .sym-card { background:var(--card-bg); border:1px solid var(--border); border-radius:10px; padding:15px; }
 .sym-card.trending { border-color:rgba(59,130,246,0.25); }
 .sym-card.ranging { opacity:0.65; }
@@ -79,6 +80,8 @@ body { font-family:'SF Mono','JetBrains Mono','Fira Code',monospace; background:
 .sym-stat-val { font-size:12px; font-weight:600; }
 .adx-bar { height:3px; border-radius:2px; background:var(--navy-accent); margin-top:4px; overflow:hidden; }
 .adx-fill { height:100%; border-radius:2px; transition:width 0.5s; }
+.pos-chart-wrap { position:relative; width:100%; height:110px; margin:10px 0; }
+.pos-pnl-big { font-size:22px; font-weight:700; letter-spacing:-0.02em; }
 /* Risk */
 .risk-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px; margin-bottom:16px; }
 .risk-card { background:var(--card-bg); border:1px solid var(--border); border-radius:10px; padding:15px; }
@@ -129,6 +132,13 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
 .empty-state { text-align:center; color:var(--text-muted); padding:30px; font-size:11px; }
 .refresh-btn { background:none; border:1px solid var(--border); color:var(--text-muted); padding:4px 9px; border-radius:4px; font-size:10px; font-family:inherit; cursor:pointer; display:flex; align-items:center; gap:4px; transition:all 0.15s; }
 .refresh-btn:hover { border-color:var(--border-bright); color:var(--text-secondary); }
+/* Visuals tab */
+.viz-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.viz-panel { background:var(--card-bg); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+.viz-canvas-wrap { width:100%; height:340px; position:relative; background:radial-gradient(ellipse at center, rgba(37,99,235,0.06) 0%, rgba(6,13,31,0) 70%); }
+.viz-canvas-wrap canvas { display:block; width:100% !important; height:100% !important; }
+.viz-caption { padding:8px 15px; font-size:9px; color:var(--text-muted); border-top:1px solid var(--border); letter-spacing:0.04em; }
+@media(max-width:900px){.viz-grid{grid-template-columns:1fr}}
 @media(max-width:700px){.ctrls-row{grid-template-columns:1fr}.two-col{grid-template-columns:1fr}.stats-grid{grid-template-columns:1fr 1fr}.sym-grid{grid-template-columns:1fr}}
 </style>
 </head>
@@ -136,11 +146,11 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
 <div class="header">
   <div class="logo"><div class="logo-dot"></div>ALPHABOT <span style="font-size:10px;color:var(--text-muted);font-weight:400;margin-left:4px">v5</span></div>
   <div class="header-right">
-    <div class="api-badge healthy" id="api-badge" onclick="switchTabDirect('risk')" title="Haiku direction API — click for details">
-      <i class="ti ti-brain"></i><span id="api-status-text">HAIKU OK</span>
+    <div class="api-badge healthy" id="api-badge" onclick="switchTabDirect('risk')" title="NVIDIA direction gate — click for details">
+      <i class="ti ti-brain"></i><span id="api-status-text">NVIDIA OK</span>
     </div>
-    <div class="api-badge healthy" id="opus-badge" onclick="switchTab(event,'sentiment')" title="Opus morning call status — click for Sentiment tab">
-      <i class="ti ti-stars"></i><span id="opus-status-text">OPUS —</span>
+    <div class="api-badge healthy" id="opus-badge" onclick="switchTabDirect('sentiment')" title="NVIDIA morning call status — click for Sentiment tab">
+      <i class="ti ti-stars"></i><span id="opus-status-text">CALL —</span>
     </div>
     <div class="status-badge"><div class="status-dot"></div><span id="market-status">CHECKING...</span></div>
     <span id="last-update" style="color:var(--text-muted);font-size:10px">—</span>
@@ -148,13 +158,14 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
 </div>
 <div class="tabs">
   <div class="tab active" onclick="switchTab(event,'overview')"><i class="ti ti-chart-line"></i> Overview</div>
-  <div class="tab" onclick="switchTab(event,'symbols')"><i class="ti ti-antenna"></i> Symbols</div>
+  <div class="tab" onclick="switchTab(event,'positions')"><i class="ti ti-antenna"></i> Positions</div>
   <div class="tab" onclick="switchTab(event,'signals')"><i class="ti ti-radar"></i> Signals</div>
   <div class="tab" onclick="switchTab(event,'risk')"><i class="ti ti-shield-lock"></i> Risk</div>
   <div class="tab" onclick="switchTab(event,'sentiment')"><i class="ti ti-news"></i> Sentiment</div>
   <div class="tab" onclick="switchTab(event,'controls')"><i class="ti ti-adjustments"></i> Controls</div>
   <div class="tab" onclick="switchTab(event,'performance')"><i class="ti ti-trending-up"></i> Performance</div>
   <div class="tab" onclick="switchTab(event,'meta')"><i class="ti ti-brain"></i> Meta Brain</div>
+  <div class="tab" onclick="switchTab(event,'visuals')"><i class="ti ti-cube"></i> Visuals</div>
   <div class="tab" onclick="switchTab(event,'logs')"><i class="ti ti-terminal"></i> Logs</div>
 </div>
 
@@ -165,9 +176,9 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
     <div class="stat-card"><div class="stat-label">Win Rate</div><div class="stat-value cyan" id="today-wr">—%</div><div class="stat-sub" id="today-trades">0 trades</div></div>
     <div class="stat-card"><div class="stat-label">Open Positions</div><div class="stat-value" id="open-count">0</div><div class="stat-sub">of 7 max</div></div>
     <div class="stat-card"><div class="stat-label">7-Day P&L</div><div class="stat-value" id="week-pnl">$0.00</div><div class="stat-sub" id="week-wr">—% win rate</div></div>
-    <div class="stat-card"><div class="stat-label">Claude API</div><div class="stat-value green" id="api-stat-val">OK</div><div class="stat-sub" id="api-stat-sub">checking...</div></div>
+    <div class="stat-card"><div class="stat-label">NVIDIA API</div><div class="stat-value green" id="api-stat-val">OK</div><div class="stat-sub" id="api-stat-sub">checking...</div></div>
     <div class="stat-card"><div class="stat-label">Limit Remaining</div><div class="stat-value green" id="limit-left">$600</div><div class="stat-sub">before kill switch</div></div>
-    <div class="stat-card" style="cursor:pointer" onclick="loadMorningCall()"><div class="stat-label">Opus Bias Today</div><div class="stat-value" id="morning-bias-val">—</div><div class="stat-sub" id="morning-favor-sub">no call yet</div></div>
+    <div class="stat-card" style="cursor:pointer" onclick="loadMorningCall()"><div class="stat-label">NVIDIA Bias Today</div><div class="stat-value" id="morning-bias-val">—</div><div class="stat-sub" id="morning-favor-sub">no call yet</div></div>
   </div>
   <div class="panel">
     <div class="panel-header">
@@ -183,7 +194,7 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
   </div>
   <div class="panel" style="border-color:rgba(139,92,246,0.25)">
     <div class="panel-header">
-      <div class="panel-title"><i class="ti ti-brain"></i> Opus 4.8 Pre-Market Call</div>
+      <div class="panel-title"><i class="ti ti-brain"></i> NVIDIA Pre-Market Call</div>
       <div style="font-size:10px;color:var(--text-muted)" id="morning-call-date">—</div>
     </div>
     <div class="panel-body">
@@ -212,22 +223,13 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
   </div>
 </div>
 
-<!-- SYMBOLS -->
-<div id="tab-symbols" class="content">
+<!-- POSITIONS (live charts, replaces old Symbols tab) -->
+<div id="tab-positions" class="content">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-    <span style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-muted)">Live per-symbol indicator state — updates every 30s</span>
-    <button class="refresh-btn" onclick="loadSymbols()"><i class="ti ti-refresh"></i> Refresh</button>
+    <span style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-muted)">Live 1-min price + unrealized P&L for open positions — updates every 60s</span>
+    <button class="refresh-btn" onclick="loadPositions()"><i class="ti ti-refresh"></i> Refresh</button>
   </div>
-  <div id="sym-cards-container" class="sym-grid"><div class="empty-state">Loading...</div></div>
-  <div class="panel">
-    <div class="panel-header"><div class="panel-title"><i class="ti ti-clock-bolt"></i> Signal State Per Symbol</div></div>
-    <div class="panel-body" style="padding:0">
-      <table class="data-table">
-        <thead><tr><th>Symbol</th><th>Last Dir</th><th>ADX</th><th>Base Score</th><th>Mom Score</th><th>VWAP Side</th><th>MACD</th><th>RSI50</th><th>EMA</th><th>Last Signal</th></tr></thead>
-        <tbody id="sym-table-body"><tr><td colspan="10" class="empty-state">Loading...</td></tr></tbody>
-      </table>
-    </div>
-  </div>
+  <div id="positions-container" class="sym-grid"><div class="empty-state">Loading...</div></div>
 </div>
 
 <!-- SIGNALS -->
@@ -235,7 +237,7 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
   <div class="stats-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:12px">
     <div class="stat-card"><div class="stat-label">Total Signals</div><div class="stat-value cyan" id="sig-total">—</div><div class="stat-sub">today</div></div>
     <div class="stat-card"><div class="stat-label">ADX Blocked</div><div class="stat-value amber" id="sig-adx-blocked">—</div><div class="stat-sub">ranging market</div></div>
-    <div class="stat-card"><div class="stat-label">Claude → None</div><div class="stat-value" id="sig-claude-blocked">—</div><div class="stat-sub">no conviction</div></div>
+    <div class="stat-card"><div class="stat-label">Direction → None</div><div class="stat-value" id="sig-claude-blocked">—</div><div class="stat-sub">no conviction</div></div>
     <div class="stat-card"><div class="stat-label">Entries Taken</div><div class="stat-value green" id="sig-traded">—</div><div class="stat-sub">trades opened</div></div>
   </div>
   <div class="panel">
@@ -245,7 +247,7 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
     </div>
     <div class="panel-body" style="padding:0">
       <table class="data-table">
-        <thead><tr><th>Time</th><th>Symbol</th><th>Claude</th><th>Base /4</th><th>Mom /2</th><th>ADX</th><th>EMA</th><th>VWAP</th><th>VOL</th><th>DEV</th><th>MACD</th><th>RSI50</th><th>MTF</th><th>Status</th></tr></thead>
+        <thead><tr><th>Time</th><th>Symbol</th><th>Direction</th><th>Base /4</th><th>Mom /2</th><th>ADX</th><th>EMA</th><th>VWAP</th><th>VOL</th><th>DEV</th><th>MACD</th><th>RSI50</th><th>MTF</th><th>Status</th></tr></thead>
         <tbody id="signals-body"><tr><td colspan="14" class="empty-state">No signals yet</td></tr></tbody>
       </table>
     </div>
@@ -268,7 +270,7 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
       <div class="stat-sub" style="margin-top:5px">vs $20k max (10x lever)</div>
     </div>
     <div class="risk-card">
-      <div class="stat-label">Claude API</div>
+      <div class="stat-label">NVIDIA API</div>
       <div class="stat-value green" id="risk-api-status">HEALTHY</div>
       <div class="stat-sub" style="margin-top:5px" id="risk-api-detail">checking...</div>
     </div>
@@ -280,7 +282,7 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
   </div>
   <div class="two-col">
     <div class="panel">
-      <div class="panel-header"><div class="panel-title"><i class="ti ti-brain"></i> Claude API Health</div><button class="refresh-btn" onclick="loadRisk()"><i class="ti ti-refresh"></i></button></div>
+      <div class="panel-header"><div class="panel-title"><i class="ti ti-brain"></i> NVIDIA API Health</div><button class="refresh-btn" onclick="loadRisk()"><i class="ti ti-refresh"></i></button></div>
       <div class="panel-body">
         <div class="cooldown-item"><span style="color:var(--text-muted)">Status</span><span id="api-health-status">—</span></div>
         <div class="cooldown-item"><span style="color:var(--text-muted)">Mode</span><span id="api-health-mode">—</span></div>
@@ -309,11 +311,15 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
 <!-- SENTIMENT -->
 <div id="tab-sentiment" class="content">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-    <span style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-muted)">Pre-market data pulled at 9:25am ET — feeds Opus morning call</span>
+    <span style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-muted)">Pre-market data pulled at 9:25am ET — feeds NVIDIA morning call</span>
     <div style="display:flex;gap:8px">
       <button class="refresh-btn" onclick="loadSentiment()"><i class="ti ti-refresh"></i> Refresh</button>
       <button class="refresh-btn" onclick="runMorningCall()" id="morning-run-btn" style="border-color:var(--purple);color:var(--purple)"><i class="ti ti-brain"></i> Run Now</button>
     </div>
+  </div>
+
+  <div id="sent-no-call-banner" style="display:none;padding:10px 14px;border:1px solid rgba(245,158,11,0.3);background:rgba(245,158,11,0.06);border-radius:8px;font-size:11px;color:var(--amber);margin-bottom:14px">
+    <i class="ti ti-alert-triangle"></i> No completed morning call for today yet. VIX/gaps/headlines below are the latest available snapshot from the scan loop.
   </div>
 
   <!-- VIX + gap summary cards -->
@@ -341,15 +347,15 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
     </div>
   </div>
 
-  <!-- Full Opus morning call -->
+  <!-- Full NVIDIA morning call -->
   <div class="panel" style="border-color:rgba(139,92,246,0.3)">
     <div class="panel-header">
-      <div class="panel-title"><i class="ti ti-brain"></i> Opus 4.8 Morning Call — Full Output</div>
+      <div class="panel-title"><i class="ti ti-brain"></i> NVIDIA Morning Call — Full Output</div>
       <div style="font-size:10px;color:var(--text-muted)" id="sent-call-date">—</div>
     </div>
     <div class="panel-body">
-      <div class="section-label" style="margin-top:0"><i class="ti ti-notes"></i> Opus Notes</div>
-      <div id="sent-notes" style="font-size:12px;color:var(--text-secondary);margin-bottom:16px;line-height:1.7">—</div>
+      <div class="section-label" style="margin-top:0"><i class="ti ti-notes"></i> Notes</div>
+      <div id="sent-notes" style="font-size:12px;color:var(--text-secondary);margin-bottom:16px;line-height:1.7">No completed morning call today.</div>
       <div id="sent-error" style="color:var(--red);font-size:11px;margin-bottom:12px;display:none"></div>
       <div class="section-label"><i class="ti ti-send"></i> Full Prompt Sent</div>
       <pre id="sent-full-prompt" style="font-size:10px;color:var(--text-muted);white-space:pre-wrap;word-break:break-word;background:var(--navy-darkest);border:1px solid var(--border);border-radius:6px;padding:12px;max-height:300px;overflow-y:auto;line-height:1.6">—</pre>
@@ -381,7 +387,7 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
           <label class="toggle-switch"><input type="checkbox" id="ctrl-SENTIMENT_VIX_ENABLED" onchange="toggleBool(this,'SENTIMENT_VIX_ENABLED')"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
         </div>
         <div class="ctrl-row">
-          <div><div class="ctrl-label">Morning call (Opus 4.8)</div><div class="ctrl-hint">Run Opus pre-market analysis at 9:25am ET</div></div>
+          <div><div class="ctrl-label">Morning call (NVIDIA)</div><div class="ctrl-hint">Run NVIDIA pre-market analysis at 9:25am ET</div></div>
           <label class="toggle-switch"><input type="checkbox" id="ctrl-MORNING_CALL_ENABLED" onchange="toggleBool(this,'MORNING_CALL_ENABLED')"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
         </div>
       </div>
@@ -394,12 +400,12 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
         <div class="ctrl-val" id="val-SENTIMENT_NEWS_HOURS">6h</div>
       </div>
       <div class="ctrl-row">
-        <div><div class="ctrl-label">News influence weight</div><div class="ctrl-hint">How much Opus weights news vs technicals</div></div>
+        <div><div class="ctrl-label">News influence weight</div><div class="ctrl-hint">How much the model weights news vs technicals</div></div>
         <input type="range" min="10" max="50" step="5" id="ctrl-SENTIMENT_NEWS_INFLUENCE_pct" oninput="updateSentInfluence(this)">
         <div class="ctrl-val" id="val-SENTIMENT_NEWS_INFLUENCE">30%</div>
       </div>
       <div class="ctrl-row">
-        <div><div class="ctrl-label">Gap threshold %</div><div class="ctrl-hint">Min gap % that Opus considers significant</div></div>
+        <div><div class="ctrl-label">Gap threshold %</div><div class="ctrl-hint">Min gap % considered significant</div></div>
         <input type="range" min="0.1" max="1.5" step="0.1" id="ctrl-SENTIMENT_GAP_THRESHOLD" oninput="updateVal(this,'%')">
         <div class="ctrl-val" id="val-SENTIMENT_GAP_THRESHOLD">0.3%</div>
       </div>
@@ -439,9 +445,9 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
       </div>
     </div>
     <div class="ctrl-group">
-      <h3><i class="ti ti-brain"></i> Claude Direction API</h3>
+      <h3><i class="ti ti-brain"></i> NVIDIA Direction API</h3>
       <div class="ctrl-row">
-        <div><div class="ctrl-label">API status</div><div class="ctrl-hint">Haiku decides long/short/none. Rule-based fallback auto-activates on failure.</div></div>
+        <div><div class="ctrl-label">API status</div><div class="ctrl-hint">Nemotron Nano decides long/short/none. Rule-based fallback auto-activates on failure.</div></div>
         <span class="badge badge-healthy" id="ctrl-api-status-badge">HEALTHY</span>
       </div>
       <div class="ctrl-row">
@@ -772,6 +778,36 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
   <div id="meta-reviews-container"><div class="empty-state">No reviews yet.</div></div>
 </div>
 
+<!-- VISUALS -->
+<div id="tab-visuals" class="content">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+    <span style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-muted)">3D data views — auto-rotate, refresh with live data every 15s</span>
+    <button class="refresh-btn" onclick="refreshVisualsData()"><i class="ti ti-refresh"></i> Refresh Data</button>
+  </div>
+  <div class="viz-grid">
+    <div class="viz-panel">
+      <div class="panel-header"><div class="panel-title"><i class="ti ti-chart-line"></i> 30-Day Equity Curve</div></div>
+      <div class="viz-canvas-wrap" id="viz-equity"></div>
+      <div class="viz-caption">Cumulative P&L over time — line rises/falls as trades close, camera slowly orbits</div>
+    </div>
+    <div class="viz-panel">
+      <div class="panel-header"><div class="panel-title"><i class="ti ti-chart-bar"></i> Live Position P&L Waterfall</div></div>
+      <div class="viz-canvas-wrap" id="viz-waterfall"></div>
+      <div class="viz-caption">One bar per open position — green rises above the floor, red drops below</div>
+    </div>
+    <div class="viz-panel">
+      <div class="panel-header"><div class="panel-title"><i class="ti ti-chart-dots-3"></i> Trade Scatter (last 20 closed)</div></div>
+      <div class="viz-canvas-wrap" id="viz-scatter"></div>
+      <div class="viz-caption">Each point = one closed trade — height is P&L, depth groups by symbol</div>
+    </div>
+    <div class="viz-panel">
+      <div class="panel-header"><div class="panel-title"><i class="ti ti-radar-2"></i> Signal Strength Radar</div></div>
+      <div class="viz-canvas-wrap" id="viz-radar"></div>
+      <div class="viz-caption">Spinning per-symbol signal polygon — ADX / RSI / MACD / VWAP / VOL / EMA</div>
+    </div>
+  </div>
+</div>
+
 <!-- LOGS -->
 <div id="tab-logs" class="content">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
@@ -781,7 +817,7 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
         <input type="checkbox" id="log-show-blocked" style="width:12px;height:12px" checked> Show ADX-blocked
       </label>
       <label style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text-muted);cursor:pointer">
-        <input type="checkbox" id="log-show-none" style="width:12px;height:12px"> Show claude=none
+        <input type="checkbox" id="log-show-none" style="width:12px;height:12px"> Show direction=none
       </label>
     </div>
     <button class="refresh-btn" onclick="loadLogs()"><i class="ti ti-refresh"></i> Refresh</button>
@@ -792,6 +828,7 @@ input[type="number"].num-input:focus { border-color:var(--blue-glow); }
 <script>
 let pnlChart=null,wrChart=null,todayChart=null;
 const configState={};
+const posCharts={}; // symbol -> Chart.js instance for Positions tab
 
 function switchTab(e,name){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
@@ -799,20 +836,22 @@ function switchTab(e,name){
   e.currentTarget.classList.add('active');
   document.getElementById('tab-'+name).classList.add('active');
   if(name==='overview')    loadOverview();
-  if(name==='symbols')     loadSymbols();
+  if(name==='positions')   loadPositions();
   if(name==='signals')     loadSignals();
   if(name==='risk')        loadRisk();
   if(name==='sentiment')   loadSentiment();
   if(name==='controls')    loadConfig();
   if(name==='performance') loadPerformance();
   if(name==='meta')        loadMeta();
+  if(name==='visuals')     initVisuals();
   if(name==='logs')        loadLogs();
 }
 function switchTabDirect(name){
   document.querySelectorAll('.tab').forEach(t=>{ if(t.textContent.toLowerCase().includes(name)) t.classList.add('active'); else t.classList.remove('active'); });
   document.querySelectorAll('.content').forEach(c=>c.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
-  loadRisk();
+  if(name==='risk') loadRisk();
+  if(name==='sentiment') loadSentiment();
 }
 
 function fmt(n,sign=true){
@@ -856,43 +895,43 @@ async function loadAPIHealth(){
   try{
     const d=await fetch('/api/health').then(r=>r.json());
     if(d.error)return;
-    const api=d.claude_api;
+    const api=d.nvidia_api;
     const badge=document.getElementById('api-badge');
     const text=document.getElementById('api-status-text');
-    badge.className='api-badge '+(api.using_fallback?'fallback':api.status);
-    text.textContent=api.using_fallback?'FALLBACK':api.status==='healthy'?'HAIKU OK':'DEGRADED';
+    badge.className='api-badge '+(api.using_fallback?'rulebased':api.status);
+    text.textContent=api.using_fallback?'RULE-BASED':api.status==='healthy'?'NVIDIA OK':'DEGRADED';
 
-    // Opus morning call badge
-    const opus=d.opus_morning;
+    // Morning call badge
+    const morning=d.morning_call;
     const opusBadge=document.getElementById('opus-badge');
     const opusText=document.getElementById('opus-status-text');
-    if(opusBadge&&opusText&&opus){
-      if(opus.status==='ok'){
+    if(opusBadge&&opusText&&morning){
+      if(morning.status==='ok'){
         opusBadge.className='api-badge healthy';
-        opusText.textContent=`OPUS ${opus.bias?opus.bias.toUpperCase():'OK'}`;
-      } else if(opus.status==='error'){
+        opusText.textContent=`CALL ${morning.bias?morning.bias.toUpperCase():'OK'}`;
+      } else if(morning.status==='error'){
         opusBadge.className='api-badge down';
-        opusText.textContent='OPUS ERR';
-        opusBadge.title='Opus error: '+(opus.error||'unknown');
+        opusText.textContent='CALL ERR';
+        opusBadge.title='Morning call error: '+(morning.error||'unknown');
       } else {
         opusBadge.className='api-badge degraded';
-        opusText.textContent='OPUS —';
+        opusText.textContent='CALL —';
       }
     }
     const sv=document.getElementById('api-stat-val');
     const ss=document.getElementById('api-stat-sub');
-    sv.textContent=api.using_fallback?'FALLBACK':api.status.toUpperCase();
+    sv.textContent=api.using_fallback?'RULE-BASED':api.status.toUpperCase();
     sv.style.color=api.using_fallback?'var(--purple)':api.status==='healthy'?'var(--green)':'var(--amber)';
     ss.textContent=`${api.consecutive_fails} fails | ${api.failure_rate_pct}%`;
     const cb=document.getElementById('ctrl-api-status-badge');
     const cf=document.getElementById('ctrl-api-fails');
-    if(cb){cb.className='badge badge-'+(api.using_fallback?'fallback':api.status==='healthy'?'healthy':'degraded');cb.textContent=api.using_fallback?'FALLBACK':api.status.toUpperCase();}
+    if(cb){cb.className='badge badge-'+(api.using_fallback?'rulebased':api.status==='healthy'?'healthy':'degraded');cb.textContent=api.using_fallback?'RULE-BASED':api.status.toUpperCase();}
     if(cf)cf.textContent=api.consecutive_fails;
     document.getElementById('api-health-status').textContent=api.status;
     document.getElementById('api-health-fails').textContent=api.consecutive_fails;
     document.getElementById('api-health-total').textContent=api.total_calls||'—';
     document.getElementById('api-health-rate').textContent=(api.failure_rate_pct||0)+'%';
-    document.getElementById('api-health-mode').innerHTML=api.using_fallback?'<span class="badge badge-fallback">RULE-BASED</span>':'<span class="badge badge-healthy">CLAUDE HAIKU</span>';
+    document.getElementById('api-health-mode').innerHTML=api.using_fallback?'<span class="badge badge-rulebased">RULE-BASED</span>':'<span class="badge badge-healthy">NVIDIA NANO</span>';
     document.getElementById('api-health-last').textContent=api.last_success?fmtTime(api.last_success):'Never';
     document.getElementById('risk-api-status').textContent=api.status.toUpperCase();
     document.getElementById('risk-api-status').style.color=api.using_fallback?'var(--purple)':api.status==='healthy'?'var(--green)':'var(--amber)';
@@ -946,80 +985,90 @@ async function loadOverview(){
   }catch(e){console.error(e);}
 }
 
-async function loadSymbols(){
+// ── POSITIONS TAB (live charts) ──────────────────────────────────
+async function loadPositions(){
+  const container=document.getElementById('positions-container');
   try{
-    const [ov, sigs]=await Promise.all([fetch('/api/overview').then(r=>r.json()),fetch('/api/signals').then(r=>r.json())]);
-    const symbols=['QQQ','NVDA','TQQQ','SPY'];
-    const latest={};
-    if(Array.isArray(sigs)) sigs.forEach(s=>{ if(!latest[s.symbol]) latest[s.symbol]=s; });
-    const openBy={};
-    (ov.open_trades||[]).forEach(t=>{ openBy[t.symbol]=t; });
-    document.getElementById('sym-cards-container').innerHTML=symbols.map(sym=>{
-      const s=latest[sym]||{}; const t=openBy[sym];
-      const adx=parseFloat(s.roc_value||0);
-      const trending=adx>=20;
-      return`<div class="sym-card ${trending?'trending':'ranging'}">
+    const ov=await fetch('/api/overview').then(r=>r.json());
+    if(ov.error){container.innerHTML='<div class="empty-state">Error loading positions</div>';return;}
+    const open=ov.open_trades||[];
+    if(!open.length){
+      container.innerHTML='<div class="empty-state">No open positions right now</div>';
+      return;
+    }
+    const symbols=open.map(t=>t.symbol).join(',');
+    let barsData={};
+    try{
+      const barsResp=await fetch('/api/bars?symbols='+encodeURIComponent(symbols)).then(r=>r.json());
+      if(!barsResp.error) barsData=barsResp.bars||{};
+    }catch(e){}
+
+    container.innerHTML=open.map(t=>{
+      const entry=parseFloat(t.entry_price);
+      const pnl=parseFloat(t.pnl_usd||0);
+      const pnlColor=pnl>=0?'var(--green)':'var(--red)';
+      return `<div class="sym-card trending" id="pos-card-${t.symbol}">
         <div class="sym-header">
           <div>
-            <div class="sym-name">${sym} ${t?`<span class="badge badge-${t.side}">${t.side.toUpperCase()}</span>`:''}</div>
-            <div style="font-size:9px;color:${trending?'var(--blue-glow)':'var(--text-muted)'};margin-top:2px">${trending?'● TRENDING':'○ RANGING'}</div>
+            <div class="sym-name">${t.symbol} <span class="badge badge-${t.side}">${t.side.toUpperCase()}</span></div>
+            <div style="font-size:9px;color:var(--text-muted);margin-top:2px">held ${fmtHeld(t.entered_at)}</div>
           </div>
           <div style="text-align:right">
-            <div style="color:var(--cyan);font-weight:600;font-size:13px">${s.price?'$'+parseFloat(s.price).toFixed(2):'—'}</div>
-            <div style="font-size:9px;color:var(--text-muted);margin-top:2px">${fmtTime(s.timestamp)}</div>
+            <div class="pos-pnl-big" style="color:${pnlColor}">${fmt(pnl)}</div>
+            <div style="font-size:9px;color:var(--text-muted)">unrealized</div>
           </div>
         </div>
+        <div class="pos-chart-wrap"><canvas id="pos-chart-${t.symbol}"></canvas></div>
         <div class="sym-grid-inner">
-          <div class="sym-stat">
-            <div class="sym-stat-label">ADX</div>
-            <div class="sym-stat-val" style="color:${adxColor(adx)}">${adx?adx.toFixed(1):'—'}</div>
-            <div class="adx-bar"><div class="adx-fill" style="width:${Math.min(adx*2,100)}%;background:${adxColor(adx)}"></div></div>
-          </div>
-          <div class="sym-stat">
-            <div class="sym-stat-label">MACD Hist</div>
-            <div class="sym-stat-val" style="color:${s.macd_confirm?'var(--green)':'var(--red)'}">${s.macd_histogram!=null?parseFloat(s.macd_histogram).toFixed(4):'—'}</div>
-          </div>
-          <div class="sym-stat">
-            <div class="sym-stat-label">VWAP</div>
-            <div class="sym-stat-val" style="color:${s.vwap_side?'var(--green)':'var(--red)'}">${s.vwap_side?'ABOVE':'BELOW'}</div>
-          </div>
-          <div class="sym-stat">
-            <div class="sym-stat-label">Volume</div>
-            <div class="sym-stat-val" style="color:${s.volume_spike?'var(--green)':'var(--text-muted)'}">${s.volume_spike?'SPIKE':'NORMAL'}</div>
-          </div>
-          <div class="sym-stat">
-            <div class="sym-stat-label">EMA State</div>
-            <div class="sym-stat-val" style="color:${s.ema_cross?'var(--green)':'var(--red)'}">${s.ema_cross?'BULL':'BEAR'}</div>
-          </div>
-          <div class="sym-stat">
-            <div class="sym-stat-label">Last Dir</div>
-            <div class="sym-stat-val" style="color:${s.direction==='long'?'var(--green)':s.direction==='short'?'var(--red)':'var(--text-muted)'}">${(s.direction||'NONE').toUpperCase()}</div>
-          </div>
+          <div class="sym-stat"><div class="sym-stat-label">Entry</div><div class="sym-stat-val">$${entry.toFixed(2)}</div></div>
+          <div class="sym-stat"><div class="sym-stat-label">Stop</div><div class="sym-stat-val" style="color:var(--red)">$${parseFloat(t.stop_loss).toFixed(2)}</div></div>
+          <div class="sym-stat"><div class="sym-stat-label">Target</div><div class="sym-stat-val" style="color:var(--green)">$${parseFloat(t.take_profit).toFixed(2)}</div></div>
+          <div class="sym-stat"><div class="sym-stat-label">Qty</div><div class="sym-stat-val">${t.qty}</div></div>
         </div>
-        ${t?`<div style="margin-top:9px;padding:7px;background:rgba(255,255,255,0.03);border-radius:6px;font-size:10px;display:flex;justify-content:space-between">
-          <span>SL: <span style="color:var(--red)">$${parseFloat(t.stop_loss).toFixed(2)}</span></span>
-          <span>TP: <span style="color:var(--green)">$${parseFloat(t.take_profit).toFixed(2)}</span></span>
-          <span>Held: <span style="color:var(--cyan)">${fmtHeld(t.entered_at)}</span></span>
-        </div>`:''}
       </div>`;
     }).join('');
-    document.getElementById('sym-table-body').innerHTML=symbols.map(sym=>{
-      const s=latest[sym]||{};
-      const adx=parseFloat(s.roc_value||0);
-      return`<tr>
-        <td style="font-weight:700">${sym}</td>
-        <td>${s.direction?`<span class="badge badge-${s.direction}">${s.direction.toUpperCase()}</span>`:'<span class="badge badge-none">NONE</span>'}</td>
-        <td style="color:${adxColor(adx)};font-weight:600">${adx?adx.toFixed(1):'—'}</td>
-        <td style="color:${s.score>=3?'var(--green)':s.score>=2?'var(--amber)':'var(--text-muted)'};font-weight:600">${s.score??'—'}/4</td>
-        <td style="color:${s.momentum_score>=1?'var(--green)':'var(--text-muted)'};font-weight:600">${s.momentum_score??'—'}/2</td>
-        <td>${dot(s.vwap_side)}</td>
-        <td>${dot(s.macd_confirm)}</td>
-        <td>${dot(s.rsi_confirm)}</td>
-        <td>${dot(s.ema_cross)}</td>
-        <td style="color:var(--text-muted)">${fmtTime(s.timestamp)}</td>
-      </tr>`;
-    }).join('');
-  }catch(e){console.error(e);}
+
+    // Render/update each position's price chart
+    open.forEach(t=>{
+      const bars=barsData[t.symbol]||[];
+      const canvas=document.getElementById('pos-chart-'+t.symbol);
+      if(!canvas) return;
+      const labels=bars.map(b=>new Date(b.t).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false}));
+      const closes=bars.map(b=>b.c);
+      const entry=parseFloat(t.entry_price);
+      const lineColor=t.side==='long'?'rgba(16,185,129,0.9)':'rgba(239,68,68,0.9)';
+      const fillColor=t.side==='long'?'rgba(16,185,129,0.08)':'rgba(239,68,68,0.08)';
+
+      if(posCharts[t.symbol]) posCharts[t.symbol].destroy();
+      if(!closes.length){
+        const ctx=canvas.getContext('2d');
+        ctx.fillStyle='#4a6080'; ctx.font='10px monospace';
+        ctx.fillText('No bar data yet',10,55);
+        return;
+      }
+      posCharts[t.symbol]=new Chart(canvas.getContext('2d'),{
+        type:'line',
+        data:{
+          labels,
+          datasets:[
+            {label:t.symbol,data:closes,borderColor:lineColor,backgroundColor:fillColor,fill:true,tension:0.25,pointRadius:0,borderWidth:1.5},
+            {label:'Entry',data:closes.map(()=>entry),borderColor:'rgba(255,255,255,0.3)',borderDash:[3,3],pointRadius:0,borderWidth:1}
+          ]
+        },
+        options:{
+          responsive:true,maintainAspectRatio:false,
+          plugins:{legend:{display:false},tooltip:{enabled:true}},
+          scales:{
+            x:{display:false},
+            y:{display:true,position:'right',ticks:{color:'#4a6080',font:{size:8},callback:v=>'$'+v.toFixed(2)},grid:{color:'rgba(255,255,255,0.03)'}}
+          }
+        }
+      });
+    });
+  }catch(e){
+    console.error(e);
+    container.innerHTML='<div class="empty-state">Error loading positions</div>';
+  }
 }
 
 async function loadSignals(){
@@ -1325,10 +1374,33 @@ async function loadMorningCall(){
   }catch(e){}
 }
 
+// ── SENTIMENT (fixed: merges /api/sentiment [always populated during scan]
+// with /api/morning [only populated once the full call completes] so the
+// tab shows VIX/gaps/headlines even on a day the morning call itself failed) ──
 async function loadSentiment(){
   try{
-    const d=await fetch('/api/morning').then(r=>r.json());
-    if(d.error)return;
+    const [live,call]=await Promise.all([
+      fetch('/api/sentiment').then(r=>r.json()).catch(()=>({})),
+      fetch('/api/morning').then(r=>r.json()).catch(()=>({}))
+    ]);
+    const d={
+      vix:          live.vix || call.vix || '',
+      vix_action:   live.vix_action || call.vix_action || 'normal',
+      gaps:         (live.gaps && Object.keys(live.gaps).length) ? live.gaps : (call.gaps||{}),
+      headlines:    (live.headlines && Object.keys(live.headlines).length) ? live.headlines : (call.headlines||{}),
+      date:         call.date || live.date || '',
+      bias:         call.bias || '',
+      favor:        call.favor || '',
+      avoid:        call.avoid || '',
+      notes:        call.notes || '',
+      full_prompt:  call.full_prompt || '',
+      full_response:call.full_response || '',
+      error:        call.error || '',
+    };
+
+    const callCompleted = !!(call.full_response && call.full_response.length);
+    const banner=document.getElementById('sent-no-call-banner');
+    if(banner) banner.style.display = callCompleted ? 'none' : 'flex';
 
     // Stat cards
     const vix=parseFloat(d.vix)||null;
@@ -1353,7 +1425,7 @@ async function loadSentiment(){
     if(biasEl){biasEl.textContent=bias.toUpperCase();biasEl.style.color=bias==='long'?'var(--green)':bias==='short'?'var(--red)':'var(--text-muted)';}
     const fe=document.getElementById('sent-favor'); if(fe)fe.textContent=d.favor||'none';
     const ae=document.getElementById('sent-avoid'); if(ae)ae.textContent=d.avoid||'none';
-    const de=document.getElementById('sent-bias-date'); if(de)de.textContent=d.date||'—';
+    const de=document.getElementById('sent-bias-date'); if(de)de.textContent=d.date||(callCompleted?'—':'no call yet');
 
     // Pre-market gaps
     const gapsBody=document.getElementById('sent-gaps-body');
@@ -1391,7 +1463,7 @@ async function loadSentiment(){
     }
 
     // Full call details
-    const notesEl=document.getElementById('sent-notes'); if(notesEl)notesEl.textContent=d.notes||'—';
+    const notesEl=document.getElementById('sent-notes'); if(notesEl)notesEl.textContent=d.notes||(callCompleted?'—':'No completed morning call today.');
     const dateEl=document.getElementById('sent-call-date'); if(dateEl)dateEl.textContent=d.date||'—';
     const promptEl=document.getElementById('sent-full-prompt'); if(promptEl)promptEl.textContent=d.full_prompt||'—';
     const respEl=document.getElementById('sent-full-response'); if(respEl)respEl.textContent=d.full_response||'—';
@@ -1401,7 +1473,6 @@ async function loadSentiment(){
       else errEl.style.display='none';
     }
 
-    // Load sentiment config values
     await loadSentimentConfig();
   }catch(e){console.error(e);}
 }
@@ -1468,9 +1539,303 @@ loadMorningCall();
 setInterval(loadOverview,30000);
 setInterval(loadAPIHealth,60000);
 setInterval(loadMorningCall,300000);
-setInterval(loadSentiment,300000);
 setInterval(marketStatus,30000);
 setInterval(loadLogs,60000);
+
+// ══════════════════════════════════════════════════════════════
+// VISUALS TAB — Three.js 3D data views
+// Each scene lazy-inits on first tab visit, then just updates data
+// on refresh (no full scene rebuild) for smooth animation.
+// ══════════════════════════════════════════════════════════════
+const viz = { inited:false, scenes:{}, animId:null };
+
+function vizMakeRenderer(containerId){
+  const el=document.getElementById(containerId);
+  const w=el.clientWidth||300, h=el.clientHeight||340;
+  const renderer=new THREE.WebGLRenderer({antialias:true, alpha:true});
+  renderer.setSize(w,h);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+  el.innerHTML='';
+  el.appendChild(renderer.domElement);
+  const scene=new THREE.Scene();
+  const camera=new THREE.PerspectiveCamera(45, w/h, 0.1, 1000);
+  return {renderer,scene,camera,el};
+}
+
+function vizAddLights(scene){
+  const amb=new THREE.AmbientLight(0x8ba3c7, 0.55);
+  scene.add(amb);
+  const dir=new THREE.DirectionalLight(0xffffff, 0.7);
+  dir.position.set(5,8,5);
+  scene.add(dir);
+  const point=new THREE.PointLight(0x3b82f6, 0.6, 50);
+  point.position.set(-5,3,4);
+  scene.add(point);
+}
+
+// ── 1. Equity curve ──────────────────────────────────────────
+function vizBuildEquity(daily){
+  const {renderer,scene,camera}=vizMakeRenderer('viz-equity');
+  vizAddLights(scene);
+  camera.position.set(0,4,11);
+  camera.lookAt(0,0,0);
+
+  const group=new THREE.Group();
+  scene.add(group);
+
+  const gridHelper=new THREE.GridHelper(14,14,0x1e3d72,0x162d55);
+  gridHelper.position.y=-2.2;
+  group.add(gridHelper);
+
+  let cum=0;
+  const pts=(daily.length?daily:[{pnl:0}]).map((d,i)=>{
+    cum+=d.pnl||0;
+    return {x:i,y:cum};
+  });
+  const maxAbs=Math.max(1,...pts.map(p=>Math.abs(p.y)));
+  const n=pts.length;
+  const vertices=[];
+  pts.forEach((p,i)=>{
+    const x=(i/(Math.max(n-1,1)))*12-6;
+    const y=(p.y/maxAbs)*2;
+    vertices.push(x,y,0);
+  });
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(vertices,3));
+  const lastVal=pts[pts.length-1]?.y||0;
+  const lineColor=lastVal>=0?0x10b981:0xef4444;
+  const mat=new THREE.LineBasicMaterial({color:lineColor, linewidth:2});
+  const line=new THREE.Line(geo,mat);
+  group.add(line);
+
+  // glowing endpoint sphere
+  const endGeo=new THREE.SphereGeometry(0.12,16,16);
+  const endMat=new THREE.MeshStandardMaterial({color:lineColor, emissive:lineColor, emissiveIntensity:0.6});
+  const endSphere=new THREE.Mesh(endGeo,endMat);
+  const lastX=6, lastY=(lastVal/maxAbs)*2;
+  endSphere.position.set(lastX,lastY,0);
+  group.add(endSphere);
+
+  viz.scenes.equity={renderer,scene,camera,group,endSphere,t:0};
+}
+
+// ── 2. Live P&L waterfall ────────────────────────────────────
+function vizBuildWaterfall(openTrades){
+  const {renderer,scene,camera}=vizMakeRenderer('viz-waterfall');
+  vizAddLights(scene);
+  camera.position.set(0,5,12);
+  camera.lookAt(0,0,0);
+
+  const group=new THREE.Group();
+  scene.add(group);
+
+  const floor=new THREE.Mesh(
+    new THREE.PlaneGeometry(14,8),
+    new THREE.MeshStandardMaterial({color:0x0f2040, transparent:true, opacity:0.5, side:THREE.DoubleSide})
+  );
+  floor.rotation.x=-Math.PI/2;
+  floor.position.y=0;
+  group.add(floor);
+
+  const bars=[];
+  const trades=openTrades.length?openTrades:[];
+  const n=Math.max(trades.length,1);
+  trades.forEach((t,i)=>{
+    const pnl=parseFloat(t.pnl_usd||0);
+    const color=pnl>=0?0x10b981:0xef4444;
+    const height=Math.max(Math.abs(pnl)*0.08, 0.05);
+    const geo=new THREE.BoxGeometry(0.9,height,0.9);
+    const mat=new THREE.MeshStandardMaterial({color, emissive:color, emissiveIntensity:0.25, metalness:0.2, roughness:0.5});
+    const bar=new THREE.Mesh(geo,mat);
+    const x=(i-(n-1)/2)*1.6;
+    bar.position.set(x, (pnl>=0? height/2 : -height/2), 0);
+    group.add(bar);
+    bars.push({mesh:bar, targetH:height, pnl, x});
+  });
+
+  if(!trades.length){
+    // placeholder small pulsing dot so the panel isn't totally empty
+    const dot=new THREE.Mesh(new THREE.SphereGeometry(0.15,12,12), new THREE.MeshStandardMaterial({color:0x4a6080}));
+    group.add(dot);
+  }
+
+  viz.scenes.waterfall={renderer,scene,camera,group,bars,t:0};
+}
+
+// ── 3. Trade scatter ─────────────────────────────────────────
+function vizBuildScatter(trades){
+  const {renderer,scene,camera}=vizMakeRenderer('viz-scatter');
+  vizAddLights(scene);
+  camera.position.set(0,4,12);
+  camera.lookAt(0,0,0);
+
+  const group=new THREE.Group();
+  scene.add(group);
+  const gridHelper=new THREE.GridHelper(12,12,0x1e3d72,0x162d55);
+  gridHelper.position.y=-2;
+  group.add(gridHelper);
+
+  const symbols=[...new Set(trades.map(t=>t.symbol))];
+  const maxAbsPnl=Math.max(1,...trades.map(t=>Math.abs(parseFloat(t.pnl_usd||0))));
+
+  trades.forEach((t,i)=>{
+    const pnl=parseFloat(t.pnl_usd||0);
+    const color=pnl>=0?0x10b981:0xef4444;
+    const symIdx=symbols.indexOf(t.symbol);
+    const geo=new THREE.SphereGeometry(0.18,12,12);
+    const mat=new THREE.MeshStandardMaterial({color, emissive:color, emissiveIntensity:0.4});
+    const sphere=new THREE.Mesh(geo,mat);
+    const x=(i/(Math.max(trades.length-1,1)))*10-5;
+    const y=(pnl/maxAbsPnl)*1.8;
+    const z=(symIdx-(symbols.length-1)/2)*0.9;
+    sphere.position.set(x,y,z);
+    sphere.userData.baseY=y;
+    group.add(sphere);
+  });
+
+  if(!trades.length){
+    const dot=new THREE.Mesh(new THREE.SphereGeometry(0.15,12,12), new THREE.MeshStandardMaterial({color:0x4a6080}));
+    group.add(dot);
+  }
+
+  viz.scenes.scatter={renderer,scene,camera,group,t:0};
+}
+
+// ── 4. Signal radar (spinning) ───────────────────────────────
+function vizBuildRadar(signalsBySymbol){
+  const {renderer,scene,camera}=vizMakeRenderer('viz-radar');
+  vizAddLights(scene);
+  camera.position.set(0,5,9);
+  camera.lookAt(0,0,0);
+
+  const group=new THREE.Group();
+  scene.add(group);
+
+  const base=new THREE.Mesh(
+    new THREE.CylinderGeometry(3.2,3.2,0.08,48),
+    new THREE.MeshStandardMaterial({color:0x0f2040, transparent:true, opacity:0.6})
+  );
+  base.position.y=-0.5;
+  group.add(base);
+
+  const axes=6; // ADX, RSI, MACD, VWAP, VOL, EMA
+  const ringColors=[0x3b82f6,0x06b6d4,0x10b981,0xf59e0b,0x8b5cf6];
+  const symbols=Object.keys(signalsBySymbol).slice(0,5);
+
+  symbols.forEach((sym,si)=>{
+    const vals=signalsBySymbol[sym]; // array of 0..1, length 6
+    const pts=[];
+    for(let a=0;a<axes;a++){
+      const angle=(a/axes)*Math.PI*2;
+      const r=0.6+vals[a]*2.2;
+      pts.push(new THREE.Vector3(Math.cos(angle)*r, 0, Math.sin(angle)*r));
+    }
+    pts.push(pts[0].clone());
+    const geo=new THREE.BufferGeometry().setFromPoints(pts);
+    const mat=new THREE.LineBasicMaterial({color:ringColors[si%ringColors.length], linewidth:2});
+    const loop=new THREE.LineLoop(geo,mat);
+    loop.position.y=0.2+si*0.18;
+    group.add(loop);
+  });
+
+  if(!symbols.length){
+    const dot=new THREE.Mesh(new THREE.SphereGeometry(0.15,12,12), new THREE.MeshStandardMaterial({color:0x4a6080}));
+    group.add(dot);
+  }
+
+  viz.scenes.radar={renderer,scene,camera,group,t:0};
+}
+
+function vizAnimate(){
+  viz.animId=requestAnimationFrame(vizAnimate);
+  const t=performance.now()*0.0004;
+
+  if(viz.scenes.equity){
+    const s=viz.scenes.equity;
+    s.group.rotation.y=Math.sin(t*0.6)*0.35;
+    s.camera.position.x=Math.sin(t*0.3)*3;
+    s.camera.lookAt(0,0,0);
+    if(s.endSphere) s.endSphere.scale.setScalar(1+Math.sin(t*4)*0.15);
+    s.renderer.render(s.scene,s.camera);
+  }
+  if(viz.scenes.waterfall){
+    const s=viz.scenes.waterfall;
+    s.group.rotation.y=t*0.5;
+    (s.bars||[]).forEach((b,i)=>{
+      const pulse=1+Math.sin(t*3+i)*0.04;
+      b.mesh.scale.y=pulse;
+    });
+    s.renderer.render(s.scene,s.camera);
+  }
+  if(viz.scenes.scatter){
+    const s=viz.scenes.scatter;
+    s.group.rotation.y=t*0.4;
+    s.group.children.forEach((c,i)=>{
+      if(c.userData && c.userData.baseY!==undefined){
+        c.position.y=c.userData.baseY+Math.sin(t*2+i)*0.06;
+      }
+    });
+    s.renderer.render(s.scene,s.camera);
+  }
+  if(viz.scenes.radar){
+    const s=viz.scenes.radar;
+    s.group.rotation.y=t*0.8;
+    s.renderer.render(s.scene,s.camera);
+  }
+}
+
+async function initVisuals(){
+  if(!viz.inited){
+    viz.inited=true;
+    vizAnimate();
+    window.addEventListener('resize', ()=>{
+      ['equity','waterfall','scatter','radar'].forEach(key=>{
+        const s=viz.scenes[key];
+        if(!s) return;
+        const el=document.getElementById('viz-'+key);
+        if(!el) return;
+        const w=el.clientWidth, h=el.clientHeight;
+        if(w&&h){ s.camera.aspect=w/h; s.camera.updateProjectionMatrix(); s.renderer.setSize(w,h); }
+      });
+    });
+  }
+  await refreshVisualsData();
+  clearInterval(window._vizInterval);
+  window._vizInterval=setInterval(refreshVisualsData, 15000);
+}
+
+async function refreshVisualsData(){
+  try{
+    const [perf, ov, sigs] = await Promise.all([
+      fetch('/api/performance').then(r=>r.json()).catch(()=>({daily:[]})),
+      fetch('/api/overview').then(r=>r.json()).catch(()=>({open_trades:[],recent_trades:[]})),
+      fetch('/api/signals').then(r=>r.json()).catch(()=>([]))
+    ]);
+
+    vizBuildEquity(perf.daily||[]);
+    vizBuildWaterfall(ov.open_trades||[]);
+    vizBuildScatter((ov.recent_trades||[]).slice(0,20));
+
+    // Build per-symbol signal vectors [ADX-normalized, RSI50-bool, MACD-bool, VWAP-bool, VOL-bool, EMA-bool]
+    const bySym={};
+    if(Array.isArray(sigs)){
+      sigs.forEach(s=>{
+        if(!s.symbol || bySym[s.symbol]) return;
+        const adx=Math.min((parseFloat(s.roc_value||0))/50,1);
+        bySym[s.symbol]=[
+          adx,
+          s.rsi_confirm?1:0.15,
+          s.macd_confirm?1:0.15,
+          s.vwap_side?1:0.15,
+          s.volume_spike?1:0.15,
+          s.ema_cross?1:0.15,
+        ];
+      });
+    }
+    vizBuildRadar(bySym);
+  }catch(e){console.error('viz refresh failed',e);}
+}
+
 </script>
 </body>
 </html>
